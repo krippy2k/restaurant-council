@@ -1,0 +1,14 @@
+node_modules
+dist
+build
+.wrangler
+.dev.vars
+.env
+.env.local
+*.local
+.DS_Store
+coverage
+.vite
+.turbo
+*.log
+.pnpm-store

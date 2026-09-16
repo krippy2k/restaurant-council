@@ -1,0 +1,27 @@
+{
+  "name": "@rc/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787 --cwd ../..",
+    "deploy": "wrangler deploy --cwd ../..",
+    "db:migrate:local": "wrangler d1 migrations apply restaurant-council --local --cwd ../..",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@rc/agents": "workspace:*",
+    "@rc/auth": "workspace:*",
+    "@rc/domain": "workspace:*",
+    "@rc/mcp": "workspace:*",
+    "@rc/orchestration": "workspace:*",
+    "@rc/protocol": "workspace:*",
+    "@rc/shared": "workspace:*",
+    "@rc/tools": "workspace:*",
+    "hono": "^4.9.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "typescript": "^5.9.2",
+    "wrangler": "^4.34.0"
+  }
+}

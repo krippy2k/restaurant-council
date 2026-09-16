@@ -1,0 +1,33 @@
+{
+  "name": "restaurant-council",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @rc/api --filter @rc/web dev",
+    "dev:api": "pnpm --filter @rc/api dev",
+    "dev:web": "pnpm --filter @rc/web dev",
+    "build": "pnpm --filter @rc/web build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit && pnpm --filter @rc/web typecheck && pnpm --filter @rc/api typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@rc/agents": "workspace:*",
+    "@rc/auth": "workspace:*",
+    "@rc/domain": "workspace:*",
+    "@rc/orchestration": "workspace:*",
+    "@rc/protocol": "workspace:*",
+    "@rc/shared": "workspace:*",
+    "@rc/tools": "workspace:*",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=11"
+  }
+}

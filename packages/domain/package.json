@@ -1,0 +1,14 @@
+{
+  "name": "@rc/domain",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@rc/shared": "workspace:*"
+  }
+}

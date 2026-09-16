@@ -1,0 +1,47 @@
+{
+  "name": "restaurant-council-api",
+  "main": "apps/api/src/index.ts",
+  "compatibility_date": "2026-09-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "SESSION_SECRET": "dev-insecure-local-only",
+    "APP_ORIGIN": "http://localhost:5173",
+    "ENVIRONMENT": "development"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "restaurant-council",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "COUNCIL",
+        "class_name": "CouncilDurableObject"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["CouncilDurableObject"]
+    }
+  ],
+  "env": {
+    "staging": {
+      "name": "restaurant-council-api-staging",
+      "vars": {
+        "ENVIRONMENT": "staging"
+      }
+    },
+    "production": {
+      "name": "restaurant-council-api",
+      "vars": {
+        "ENVIRONMENT": "production"
+      }
+    }
+  }
+}
