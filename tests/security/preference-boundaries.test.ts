@@ -158,6 +158,21 @@ describe("authorization boundaries", () => {
     expect(owner.allowed).toBe(true);
   });
 
+  it("requires the owner to delete an event", () => {
+    const member = authorize({
+      principal: createUserPrincipal("usr_sarah"),
+      action: "event.delete",
+      resource: eventA
+    });
+    const owner = authorize({
+      principal: createUserPrincipal("usr_gee"),
+      action: "event.delete",
+      resource: eventA
+    });
+    expect(member.allowed).toBe(false);
+    expect(owner.allowed).toBe(true);
+  });
+
   it("allows a user to update or delete their own preference", () => {
     const decision = authorize({
       principal: createUserPrincipal("usr_sarah"),

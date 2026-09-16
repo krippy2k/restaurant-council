@@ -54,6 +54,7 @@ export const ACTIONS = [
   "event.invite",
   "event.membership.manage",
   "event.start_council",
+  "event.delete",
   "preference.public.read",
   "preference.own.write",
   "preference.private.read",

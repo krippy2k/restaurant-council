@@ -66,6 +66,8 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(input)
     }),
+  deleteEvent: (id: string) =>
+    request<{ ok: boolean }>(`/api/events/${id}`, { method: "DELETE" }),
   invite: (eventId: string, email: string) =>
     request<{ invitation: Invitation; devInviteUrl?: string }>(
       `/api/events/${eventId}/invitations`,
@@ -79,6 +81,11 @@ export const api = {
     request<{ preference: Preference }>(`/api/events/${eventId}/preferences`, {
       method: "POST",
       body: JSON.stringify(input)
+    }),
+  interpretPreferences: (eventId: string, text: string, visibility: "PUBLIC" | "PRIVATE") =>
+    request<{ drafts: PreferenceNoteDraft[] }>(`/api/events/${eventId}/preferences/interpret`, {
+      method: "POST",
+      body: JSON.stringify({ text, visibility })
     }),
   updatePreference: (eventId: string, preferenceId: string, input: Record<string, unknown>) =>
     request<{ preference: Preference }>(`/api/events/${eventId}/preferences/${preferenceId}`, {
@@ -352,6 +359,15 @@ export interface Preference {
   priority: string;
   value?: Record<string, unknown>;
   sourceText?: string;
+}
+
+export interface PreferenceNoteDraft {
+  category: string;
+  visibility: "PUBLIC" | "PRIVATE";
+  priority: string;
+  value: Record<string, unknown>;
+  sourceText?: string;
+  summary: string;
 }
 
 export interface CouncilSnapshot {

@@ -88,7 +88,7 @@ export class MockLocationResolver implements LocationResolver {
     if (!match) {
       throw new AppError(
         ErrorCodes.LOCATION_NOT_FOUND,
-        `Could not resolve "${query}". Try a city, neighborhood, or coordinates.`,
+        `Could not resolve "${query}". Try an address, landmark, or coordinates.`,
         404
       );
     }
@@ -122,7 +122,7 @@ export class GoogleLocationResolver implements LocationResolver {
           "content-type": "application/json",
           "X-Goog-Api-Key": this.apiKey
         },
-        body: JSON.stringify({ input: q, includedPrimaryTypes: ["locality", "neighborhood", "geocode", "park"] })
+        body: JSON.stringify({ input: q })
       });
       if (!response.ok) return this.fallback.suggest(q);
       const payload = (await response.json()) as {

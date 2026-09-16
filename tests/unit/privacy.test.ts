@@ -1,4 +1,4 @@
-import { sanitizePreferenceForViewer, textRequestsSecrecy } from "@rc/domain";
+import { sanitizePreferenceForViewer, secrecyLanguageSpans, textRequestsSecrecy } from "@rc/domain";
 import {
   CouncilConstraintSchema,
   sanitizeCouncilSnapshotForClients,
@@ -39,7 +39,13 @@ describe("secrecy language in notes", () => {
   it("detects requests not to tell the group", () => {
     expect(textRequestsSecrecy("dont tell everybody I need cheap")).toBe(true);
     expect(textRequestsSecrecy("Keep this private — under $30")).toBe(true);
+    expect(textRequestsSecrecy("Dairy-free and under $30. Keep it quiet.")).toBe(true);
     expect(textRequestsSecrecy("I like steak")).toBe(false);
+    const quiet = secrecyLanguageSpans(
+      "I need it to be under $30. Please keep it quiet. I also can't have gluten."
+    );
+    expect(quiet).toHaveLength(1);
+    expect(quiet[0]?.index).toBeGreaterThan(0);
   });
 });
 

@@ -31,6 +31,23 @@ export function HomePage({
     }
   }
 
+  async function removeEvent(eventId: string, name: string) {
+    if (
+      !window.confirm(
+        `Delete “${name}”? Preferences, chat, invitations, and Council results for it will be removed.`
+      )
+    ) {
+      return;
+    }
+    setError(undefined);
+    try {
+      await api.deleteEvent(eventId);
+      setEvents((current) => current.filter((item) => item.id !== eventId));
+    } catch (err) {
+      setError(err);
+    }
+  }
+
   if (!user) {
     return (
       <section className="hero">
@@ -81,14 +98,25 @@ export function HomePage({
           <p className="muted">No events yet. Create one and invite the rest of the table.</p>
         ) : (
           events.map((event) => (
-            <Link className="event-card" key={event.id} to={`/events/${event.id}`}>
-              <div className="kicker">{event.status.replaceAll("_", " ")}</div>
-              <h2>{event.name}</h2>
-              <p className="muted">
-                {event.date ? new Date(event.date).toLocaleString() : "Date TBD"}
-                {event.locationLabel ? ` · ${event.locationLabel}` : ""}
-              </p>
-            </Link>
+            <article className="event-card" key={event.id}>
+              <Link to={`/events/${event.id}`}>
+                <div className="kicker">{event.status.replaceAll("_", " ")}</div>
+                <h2>{event.name}</h2>
+                <p className="muted">
+                  {event.date ? new Date(event.date).toLocaleString() : "Date TBD"}
+                  {event.locationLabel ? ` · ${event.locationLabel}` : ""}
+                </p>
+              </Link>
+              {event.ownerId === user.id ? (
+                <button
+                  className="btn ghost"
+                  type="button"
+                  onClick={() => void removeEvent(event.id, event.name)}
+                >
+                  Delete
+                </button>
+              ) : null}
+            </article>
           ))
         )}
       </div>

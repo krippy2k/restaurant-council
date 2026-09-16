@@ -150,6 +150,31 @@ export class Database {
     return (result.results as Record<string, unknown>[]).map(mapEvent);
   }
 
+  async deleteEvent(eventId: string): Promise<void> {
+    const tables = [
+      "preference_vault",
+      "preferences",
+      "preference_prompts",
+      "event_chat_messages",
+      "verification_tasks",
+      "human_evidence",
+      "restaurant_decisions",
+      "council_actions",
+      "event_restaurant_candidates",
+      "restaurant_searches",
+      "derived_constraints",
+      "council_sessions",
+      "invitations",
+      "event_members",
+      "audit_events"
+    ];
+    const statements = tables.map((table) =>
+      this.db.prepare(`DELETE FROM ${table} WHERE event_id = ?`).bind(eventId)
+    );
+    statements.push(this.db.prepare("DELETE FROM events WHERE id = ?").bind(eventId));
+    await this.db.batch(statements);
+  }
+
   async upsertMember(member: EventMember): Promise<void> {
     await this.db
       .prepare(

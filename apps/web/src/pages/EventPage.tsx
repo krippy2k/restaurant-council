@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { FormError } from "../FormError";
 import {
   api,
@@ -8,12 +8,14 @@ import {
   type Invitation,
   type Member,
   type Preference,
+  type PreferenceNoteDraft,
   type User
 } from "../api";
 import { EventChat } from "../components/EventChat";
 
 export function EventPage({ user }: { user: User }) {
   const { eventId = "" } = useParams();
+  const navigate = useNavigate();
   const [event, setEvent] = useState<EventSummary>();
   const [members, setMembers] = useState<Member[]>([]);
   const [preferences, setPreferences] = useState<Preference[]>([]);
@@ -23,6 +25,7 @@ export function EventPage({ user }: { user: User }) {
   const [authz, setAuthz] = useState<AuthzDemo[]>([]);
   const [error, setError] = useState<unknown>();
   const [restaurants, setRestaurants] = useState<Map<string, string>>(new Map());
+  const [busy, setBusy] = useState(false);
   const isOwner = event?.ownerId === user.id;
 
   async function refresh() {
@@ -65,6 +68,25 @@ export function EventPage({ user }: { user: User }) {
     setAuthz(data.results);
   }
 
+  async function removeEvent() {
+    if (
+      !window.confirm(
+        "Delete this event? Preferences, chat, invitations, and Council results for it will be removed."
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(undefined);
+    try {
+      await api.deleteEvent(eventId);
+      navigate("/");
+    } catch (err) {
+      setError(err);
+      setBusy(false);
+    }
+  }
+
   const names = useMemo(() => {
     const map = new Map<string, string>();
     for (const member of members) {
@@ -82,9 +104,16 @@ export function EventPage({ user }: { user: User }) {
       <p className="kicker">{event.status.replaceAll("_", " ")}</p>
       <div className="section-head">
         <h1>{event.name}</h1>
-        <Link className="btn" to={`/events/${event.id}/council`}>
-          Open Council
-        </Link>
+        <div className="nav-row">
+          {isOwner ? (
+            <button className="btn ghost" type="button" disabled={busy} onClick={() => void removeEvent()}>
+              Delete event
+            </button>
+          ) : null}
+          <Link className="btn" to={`/events/${event.id}/council`}>
+            Open Council
+          </Link>
+        </div>
       </div>
       <p className="muted">
         {event.date ? new Date(event.date).toLocaleString() : "Date TBD"}
@@ -282,6 +311,10 @@ function PreferencePanel({
   onError: (error: unknown) => void;
 }) {
   const [createForm, setCreateForm] = useState<PrefFormState>(DEFAULT_PREF_FORM);
+  const [addMode, setAddMode] = useState<"describe" | "form">("describe");
+  const [notes, setNotes] = useState("");
+  const [notesVisibility, setNotesVisibility] = useState<"PUBLIC" | "PRIVATE">("PRIVATE");
+  const [preview, setPreview] = useState<PreferenceNoteDraft[] | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<PrefFormState>(DEFAULT_PREF_FORM);
   const [editError, setEditError] = useState<unknown>();
@@ -313,6 +346,43 @@ function PreferencePanel({
     try {
       await api.addPreference(eventId, preferencePayload(createForm));
       setCreateForm(DEFAULT_PREF_FORM);
+      onChange();
+    } catch (error) {
+      onError(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function interpretNotes(form: FormEvent) {
+    form.preventDefault();
+    if (!notes.trim()) return;
+    setBusy(true);
+    try {
+      const data = await api.interpretPreferences(eventId, notes.trim(), notesVisibility);
+      setPreview(data.drafts);
+    } catch (error) {
+      onError(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveDrafts() {
+    if (!preview?.length) return;
+    setBusy(true);
+    try {
+      for (const draft of preview) {
+        await api.addPreference(eventId, {
+          category: draft.category,
+          visibility: draft.visibility,
+          priority: draft.priority,
+          value: draft.value,
+          sourceText: draft.sourceText
+        });
+      }
+      setNotes("");
+      setPreview(null);
       onChange();
     } catch (error) {
       onError(error);
@@ -363,8 +433,8 @@ function PreferencePanel({
         <h2>Preferences</h2>
       </div>
       <p className="muted">
-        Edit or delete your own constraints here. Changes apply the next time
-        Council runs.
+        Describe what you need in your own words, or use the form. Changes apply
+        the next time Council runs.
       </p>
       {preferences.map((preference) => (
         <article className="pref-card" key={preference.id}>
@@ -403,13 +473,97 @@ function PreferencePanel({
         </article>
       ))}
 
-      <form className="panel stack" onSubmit={(form) => void add(form)}>
-        <h3>Add a preference</h3>
-        <PreferenceFields form={createForm} onChange={setCreateForm} />
-        <button className="btn" type="submit" disabled={busy}>
-          Save preference
-        </button>
-      </form>
+      {addMode === "describe" ? (
+        <form className="panel stack" onSubmit={(form) => void interpretNotes(form)}>
+          <div className="section-head">
+            <h3>Add a preference</h3>
+            <button
+              className="btn ghost"
+              type="button"
+              onClick={() => {
+                setPreview(null);
+                setAddMode("form");
+              }}
+            >
+              Use the form
+            </button>
+          </div>
+          <label className="field">
+            <span>What should we keep in mind?</span>
+            <textarea
+              value={notes}
+              onChange={(e) => {
+                setNotes(e.target.value);
+                setPreview(null);
+              }}
+              rows={4}
+              placeholder="Dairy-free and under $30 — keep the budget quiet."
+              required
+            />
+          </label>
+          <label className="field">
+            <span>Visibility</span>
+            <select
+              value={notesVisibility}
+              onChange={(e) => setNotesVisibility(e.target.value as "PUBLIC" | "PRIVATE")}
+            >
+              <option value="PRIVATE">Private — only your Personal Agent can see why</option>
+              <option value="PUBLIC">Public to the group</option>
+            </select>
+          </label>
+          {notesVisibility === "PRIVATE" ? (
+            <p className="muted">
+              Private notes stay with your Personal Agent.
+            </p>
+          ) : (
+            <p className="muted">
+              Public to the group. Asking to keep it quiet makes the preference you
+              just mentioned private.
+            </p>
+          )}
+          {preview ? (
+            <div className="stack">
+              <p className="muted">We'll save:</p>
+              {preview.map((draft, index) => (
+                <article className="pref-card" key={`${draft.category}-${index}`}>
+                  <span className={`pill ${draft.visibility === "PRIVATE" ? "private" : "public"}`}>
+                    {draft.visibility === "PRIVATE" ? "Private" : "Public"}
+                  </span>
+                  <h3>{draft.summary}</h3>
+                  <p className="muted">
+                    {draft.category} · {draft.priority}
+                  </p>
+                </article>
+              ))}
+              <div className="nav-row">
+                <button className="btn" type="button" disabled={busy} onClick={() => void saveDrafts()}>
+                  Save these
+                </button>
+                <button className="btn secondary" type="submit" disabled={busy}>
+                  Interpret again
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button className="btn" type="submit" disabled={busy || !notes.trim()}>
+              {busy ? "Reading…" : "Interpret"}
+            </button>
+          )}
+        </form>
+      ) : (
+        <form className="panel stack" onSubmit={(form) => void add(form)}>
+          <div className="section-head">
+            <h3>Add a preference</h3>
+            <button className="btn ghost" type="button" onClick={() => setAddMode("describe")}>
+              Use natural language
+            </button>
+          </div>
+          <PreferenceFields form={createForm} onChange={setCreateForm} />
+          <button className="btn" type="submit" disabled={busy}>
+            Save preference
+          </button>
+        </form>
+      )}
 
       <dialog
         ref={dialogRef}

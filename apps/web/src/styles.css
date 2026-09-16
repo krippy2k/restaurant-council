@@ -328,6 +328,16 @@ textarea {
   display: block;
 }
 
+.event-card {
+  display: grid;
+  gap: 10px;
+}
+
+.event-card > a {
+  text-decoration: none;
+  color: inherit;
+}
+
 .pref-card .nav-row {
   margin-top: 12px;
 }

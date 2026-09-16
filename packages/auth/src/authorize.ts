@@ -55,7 +55,8 @@ export function authorize(request: AuthzRequest): AuthzDecision {
     case "event.update":
     case "event.invite":
     case "event.membership.manage":
-    case "event.start_council": {
+    case "event.start_council":
+    case "event.delete": {
       if (resource.type !== "event") return deny(principal, "invalid_resource");
       if (principal.type === "user" && principal.userId === resource.ownerId) {
         return allow("event_owner");

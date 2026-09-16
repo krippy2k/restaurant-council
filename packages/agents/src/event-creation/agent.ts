@@ -128,7 +128,7 @@ export class EventCreationAgent {
           ...next,
           missingFields: [
             ...next.missingFields.filter((field) => field.field !== "location" || !next.location?.query),
-            { field: "location", required: true, reason: "I couldn't find that place. Try a city, park, or neighborhood." }
+            { field: "location", required: true, reason: "I couldn't find that place. Try an address, landmark, or neighborhood." }
           ]
         };
       }

@@ -22,4 +22,4 @@ export type {
 } from "./types.ts";
 
 export { PREFERENCE_CATEGORIES } from "./types.ts";
-export { sanitizePreferenceForViewer, textRequestsSecrecy } from "./privacy.ts";
+export { sanitizePreferenceForViewer, secrecyLanguageSpans, textRequestsSecrecy } from "./privacy.ts";

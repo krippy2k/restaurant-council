@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { assertAuthorized, createUserPrincipal } from "@rc/auth";
 import { sanitizePreferenceForViewer, textRequestsSecrecy, type Event, type EventSearchArea } from "@rc/domain";
+import { interpretPreferenceNotes } from "@rc/agents";
 import { AppError, ErrorCodes, addHours, createId, hashToken, nowIso, randomToken } from "@rc/shared";
 import { clampRadiusMeters, milesToMeters } from "@rc/tools";
 import type { Env } from "../env.ts";
@@ -8,6 +9,7 @@ import { assertEventRead, loadEventResource } from "./event-access.ts";
 import { requireUser, type AppVariables } from "./session.ts";
 import { persistNewEvent } from "./event-create.ts";
 import { DevInvitationSender } from "../services/invitations.ts";
+import { runtimeFromEnv } from "../ai.ts";
 
 const CITY_PRESETS: Record<string, { latitude: number; longitude: number }> = {
   "New York": { latitude: 40.758, longitude: -73.9855 },
@@ -131,6 +133,26 @@ eventRoutes.patch("/:eventId", async (c) => {
   };
   await c.get("db").updateEvent(event);
   return c.json({ event });
+});
+
+eventRoutes.delete("/:eventId", async (c) => {
+  const identity = requireUser(c);
+  const loaded = await loadEventResource(c.get("db"), c.req.param("eventId"));
+  assertAuthorized({
+    principal: createUserPrincipal(identity.userId),
+    action: "event.delete",
+    resource: loaded.resource
+  });
+  const eventId = loaded.event.id;
+  await c.get("db").deleteEvent(eventId);
+  await c.get("db").insertAudit({
+    actorType: "user",
+    actorId: identity.userId,
+    action: "EVENT_DELETED",
+    resource: eventId,
+    decision: "ALLOW"
+  });
+  return c.json({ ok: true });
 });
 
 eventRoutes.get("/:eventId/invitations", async (c) => {
@@ -257,6 +279,23 @@ eventRoutes.get("/:eventId/preferences", async (c) => {
     }
   }
   return c.json({ preferences: visible });
+});
+
+eventRoutes.post("/:eventId/preferences/interpret", async (c) => {
+  const identity = requireUser(c);
+  const db = c.get("db");
+  await assertEventRead(db, identity.userId, c.req.param("eventId"));
+  const allowed = await db.consumeRateLimit(`pref-nl:${identity.userId}`, 40, 60 * 60 * 1000);
+  if (!allowed) throw new AppError(ErrorCodes.RATE_LIMITED, "Too many preference interpretations", 429);
+  const body = await c.req.json<{ text?: string; visibility?: "PUBLIC" | "PRIVATE" }>();
+  const text = body.text?.trim() ?? "";
+  if (!text) throw new AppError(ErrorCodes.VALIDATION, "Describe the preference first", 400);
+  const drafts = await interpretPreferenceNotes({
+    text,
+    requestedVisibility: body.visibility === "PUBLIC" ? "PUBLIC" : "PRIVATE",
+    runtime: runtimeFromEnv(c.env)
+  });
+  return c.json({ drafts });
 });
 
 eventRoutes.post("/:eventId/preferences", async (c) => {

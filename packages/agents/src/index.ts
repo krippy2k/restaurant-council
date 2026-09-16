@@ -16,3 +16,5 @@ export { applyDecisionsToEvaluations, candidateStatus } from "./decisions.ts";
 export { whyNotRecommended, councilScoreFor } from "./also-considered.ts";
 export { verificationTasksFromCouncil, claimVerificationTask, releaseVerificationTask, completeVerificationTask } from "./verification-tasks.ts";
 export { detectPreferenceFromChat, newPreferencePrompt } from "./preference-from-chat.ts";
+export { interpretPreferenceNotes } from "./preference-from-notes.ts";
+export type { PreferenceNoteDraft } from "./preference-from-notes.ts";
