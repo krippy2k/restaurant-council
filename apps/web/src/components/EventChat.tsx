@@ -253,12 +253,16 @@ function ResearchCard({
       </article>
     );
   }
-  if (card.type === "reservation-link") {
+  if (card.type === "reservation-link" || card.type === "link") {
     const href = safeUrl(card.url);
     return (
       <article className="research-card">
-        <strong>Online reservations available</strong>
-        <p className="muted">This is not a live availability check.</p>
+        <strong>{card.type === "link" ? card.label : "Online reservations available"}</strong>
+        {card.type === "reservation-link" ? (
+          <p className="muted">This is not a live availability check.</p>
+        ) : restaurant ? (
+          <p className="muted">{restaurant}</p>
+        ) : null}
         {href ? (
           <a className="btn" href={href} target="_blank" rel="noreferrer">
             {card.label}

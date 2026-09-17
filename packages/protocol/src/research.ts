@@ -83,14 +83,25 @@ export const FactCardSchema = z.object({
   sourceName: z.string().optional()
 });
 
+export const LinkCardSchema = z.object({
+  type: z.literal("link"),
+  restaurantId: z.string(),
+  url: z.string().url(),
+  label: z.string(),
+  sourceName: z.string().optional(),
+  evidenceId: z.string().optional()
+});
+
 export const ResearchResultCardSchema = z.discriminatedUnion("type", [
   MenuItemCardSchema,
   ReservationLinkCardSchema,
-  FactCardSchema
+  FactCardSchema,
+  LinkCardSchema
 ]);
 export type ResearchResultCard = z.infer<typeof ResearchResultCardSchema>;
 export type MenuItemCard = z.infer<typeof MenuItemCardSchema>;
 export type ReservationLinkCard = z.infer<typeof ReservationLinkCardSchema>;
+export type LinkCard = z.infer<typeof LinkCardSchema>;
 
 export const AgentMentionSchema = z.object({
   agentId: z.string(),
@@ -186,7 +197,7 @@ export function isSafeHttpUrl(value: string): boolean {
 export function sanitizeResearchCards(cards: ResearchResultCard[] | undefined): ResearchResultCard[] {
   if (!cards?.length) return [];
   return cards.filter((card) => {
-    if (card.type === "reservation-link") return isSafeHttpUrl(card.url);
+    if (card.type === "reservation-link" || card.type === "link") return isSafeHttpUrl(card.url);
     if (card.type === "menu-item") return !card.sourceUrl || isSafeHttpUrl(card.sourceUrl);
     return true;
   });

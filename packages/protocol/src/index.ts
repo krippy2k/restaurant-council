@@ -135,6 +135,7 @@ export type {
   ResearchResultCard,
   MenuItemCard,
   ReservationLinkCard,
+  LinkCard,
   AgentMention,
   AgentInvocation,
   AgentInvocationStatus,

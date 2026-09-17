@@ -22,21 +22,75 @@ export function normalizeRestaurantName(name: string): string {
     .trim();
 }
 
+const GENERIC_NAME_TOKENS = new Set([
+  "bar",
+  "cafe",
+  "diner",
+  "food",
+  "grill",
+  "house",
+  "kitchen",
+  "pizza",
+  "restaurant",
+  "taco",
+  "tacos"
+]);
+
+function significantNameTokens(name: string): string[] {
+  return normalizeRestaurantName(name).split(" ").filter((token) => token.length > 2);
+}
+
+function containsTokenSequence(haystack: string[], needle: string[]): boolean {
+  if (!needle.length || haystack.length < needle.length) return false;
+  for (let i = 0; i <= haystack.length - needle.length; i++) {
+    if (needle.every((token, offset) => haystack[i + offset] === token)) return true;
+  }
+  return false;
+}
+
+function consecutiveNameOverlap(nameTokens: string[], queryTokens: string[]): number {
+  for (let length = nameTokens.length; length >= 1; length--) {
+    for (let start = 0; start <= nameTokens.length - length; start++) {
+      if (containsTokenSequence(queryTokens, nameTokens.slice(start, start + length))) {
+        return length;
+      }
+    }
+  }
+  return 0;
+}
+
 export function extractExplicitNames(query: string, candidates: NamedRestaurant[]): NamedRestaurant[] {
   const q = normalizeRestaurantName(query);
   const qRaw = query.toLowerCase();
-  const matches: NamedRestaurant[] = [];
+  const queryTokens = significantNameTokens(query);
+  const scored: Array<{ restaurant: NamedRestaurant; score: number }> = [];
   for (const restaurant of candidates) {
     const n = normalizeRestaurantName(restaurant.name);
     if (!n || n.length < 3) continue;
-    const tokens = n.split(" ").filter((token) => token.length > 2);
-    const named =
+    const tokens = significantNameTokens(restaurant.name);
+    const overlap = consecutiveNameOverlap(tokens, queryTokens);
+    const fullName =
       qRaw.includes(restaurant.name.toLowerCase()) ||
       q.includes(n) ||
       (tokens.length > 0 && tokens.every((token) => q.includes(token)));
-    if (named) matches.push(restaurant);
+    let score = 0;
+    if (fullName) score = Math.max(tokens.length, 2);
+    if (overlap >= 2) score = Math.max(score, overlap);
+    if (overlap === 1) {
+      const matched = tokens.find(
+        (token) =>
+          queryTokens.includes(token) && token.length >= 5 && !GENERIC_NAME_TOKENS.has(token)
+      );
+      const unique =
+        Boolean(matched) &&
+        candidates.filter((item) => significantNameTokens(item.name).includes(matched!)).length === 1;
+      if (unique) score = Math.max(score, 1);
+    }
+    if (score > 0) scored.push({ restaurant, score });
   }
-  return matches;
+  if (!scored.length) return [];
+  const best = Math.max(...scored.map((item) => item.score));
+  return scored.filter((item) => item.score === best).map((item) => item.restaurant);
 }
 
 export function resolveRestaurants(input: {
@@ -117,7 +171,9 @@ export function carryForwardQuery(currentQuery: string, previousQuery?: string):
   const follow = FOLLOW_UP_NAME.exec(currentQuery.trim());
   if (!follow) return currentQuery;
   const nextName = follow[1].replace(/\?+$/, "").trim();
-  const previousNames = previousQuery.match(/\b[A-Z][A-Za-z0-9'&. ]{2,40}\b/g);
+  const previousNames = previousQuery.match(
+    /\b[A-Z][A-Za-z0-9'&.]*(?:\s+[A-Z][A-Za-z0-9'&.]*)*\b/g
+  );
   if (previousNames?.[0]) {
     return previousQuery.replace(previousNames[0], nextName);
   }

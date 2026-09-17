@@ -88,7 +88,7 @@ export function createMockGetMenuTool(
       return {
         items,
         excerpt: items.map((item) => item.name).join(", "),
-        sourceUrl: items[0]?.sourceUrl
+        sourceUrl: items[0]?.sourceUrl ?? (restaurant.website ? `${restaurant.website.replace(/\/$/, "")}/menu` : undefined)
       };
     }
   };
@@ -107,7 +107,9 @@ export function createMockResearchTools(deps: ResearchToolDeps): ResearchTool<un
       return {
         excerpt: restaurant.website ? `${restaurant.name} website mentions ${input.query}.` : undefined,
         sourceUrl: restaurant.website,
-        links: restaurant.website ? [`${restaurant.website.replace(/\/$/, "")}/reservations`] : []
+        links: restaurant.website
+          ? [`${restaurant.website.replace(/\/$/, "")}/menu`, `${restaurant.website.replace(/\/$/, "")}/reservations`]
+          : []
       };
     }
   };

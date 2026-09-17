@@ -237,6 +237,14 @@ export interface ChatMessage {
         evidenceId: string;
       }
     | {
+        type: "link";
+        restaurantId: string;
+        url: string;
+        label: string;
+        sourceName?: string;
+        evidenceId?: string;
+      }
+    | {
         type: "fact";
         restaurantId: string;
         label: string;

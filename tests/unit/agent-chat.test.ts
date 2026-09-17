@@ -147,6 +147,33 @@ describe("restaurant resolution", () => {
     }
   });
 
+  it("resolves a partial unique name against the event list", () => {
+    const talkin: RestaurantCandidate = {
+      ...flanigans,
+      id: "res_talkin",
+      name: "Talkin' Tacos Miramar"
+    };
+    const result = resolveRestaurants({
+      query: "does Talkin Tacos have fish tacos",
+      candidates: [sports, flanigans, talkin]
+    });
+    expect(result.status).toBe("resolved");
+    if (result.status === "resolved") expect(result.restaurants.map((item) => item.id)).toEqual(["res_talkin"]);
+  });
+
+  it("does not treat a dish name as the restaurant", () => {
+    const talkin: RestaurantCandidate = {
+      ...flanigans,
+      id: "res_talkin",
+      name: "Talkin' Tacos Miramar"
+    };
+    const result = resolveRestaurants({
+      query: "does this place have fish tacos",
+      candidates: [sports, flanigans, talkin]
+    });
+    expect(result.status).not.toBe("resolved");
+  });
+
   it("resolves this place from selected context", () => {
     const result = resolveRestaurants({
       query: "does this place have a kids menu?",
@@ -160,6 +187,9 @@ describe("restaurant resolution", () => {
   it("carries a follow-up restaurant into the prior question", () => {
     expect(carryForwardQuery("what about Flanigan's?", "does Sports Grill have fried shrimp?")).toMatch(
       /Flanigan/i
+    );
+    expect(carryForwardQuery("what about Flanigan's?", "does Sports Grill have fried shrimp?")).toMatch(
+      /fried shrimp/i
     );
   });
 });
@@ -217,6 +247,21 @@ describe("restaurant research agent", () => {
     expect(result.answer.restaurantIds).toEqual(["res_sports_grill"]);
   });
 
+  it("extracts the dish from conversational phrasing instead of searching the whole sentence", async () => {
+    const result = await agent().execute(
+      request("i want to know if this place has fried shrimp"),
+      context({ selectedRestaurantId: sports.id })
+    );
+    expect(result.answer.confidence).toBe("confirmed");
+    expect(result.answer.answer).toMatch(/fried shrimp/i);
+    expect(result.answer.answer).not.toMatch(/i want to know/i);
+    expect(result.answer.answer).not.toMatch(/outdoor seating/i);
+    expect(result.answer.cards?.some((card) => card.type === "menu-item")).toBe(true);
+    expect(result.answer.cards?.some((card) => card.type === "fact" && card.label === "Outdoor seating")).toBe(
+      false
+    );
+  });
+
   it("does not treat missing menu evidence as a no", async () => {
     const emptyMenu = new RestaurantResearchAgent(
       createResearchToolRegistry([
@@ -265,6 +310,20 @@ describe("restaurant research agent", () => {
     );
     expect(result.answer.restaurantIds.sort()).toEqual(["res_flanigans", "res_sports_grill"]);
     expect(result.answer.cards?.every((card) => card.type !== "menu-item" || card.restaurantId)).toBe(true);
+  });
+
+  it("resolves Talkin Tacos from the event list without the full location name", async () => {
+    const talkin: RestaurantCandidate = {
+      ...flanigans,
+      id: "res_talkin",
+      name: "Talkin' Tacos Miramar"
+    };
+    const result = await agent().execute(
+      request("does Talkin Tacos have fish tacos"),
+      context({ candidateRestaurants: [sports, flanigans, talkin] })
+    );
+    expect(result.answer.restaurantIds).toEqual(["res_talkin"]);
+    expect(result.answer.answer).not.toMatch(/which restaurant/i);
   });
 
   it("asks for clarification when the location is ambiguous", async () => {
@@ -357,5 +416,17 @@ describe("restaurant research agent", () => {
     const result = await agent().execute(request("does Sports Grill take reservations?"), context());
     expect(result.answer.cards?.some((card) => card.type === "reservation-link")).toBe(true);
     expect(result.answer.answer.toLowerCase()).toMatch(/not evidence that a particular time|not mean/);
+  });
+
+  it("returns a menu URL when asked for the menu link", async () => {
+    const result = await agent().execute(
+      request("can you give me the link to the menu for Sports Grill"),
+      context()
+    );
+    expect(result.answer.answer).not.toMatch(/couldn't confirm/i);
+    expect(result.answer.answer).toMatch(/https:\/\/sportsgrill\.example\.com/i);
+    expect(result.answer.cards?.some((card) => card.type === "link" && /menu|sportsgrill/i.test(card.url))).toBe(
+      true
+    );
   });
 });

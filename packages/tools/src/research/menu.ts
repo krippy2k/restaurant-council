@@ -100,6 +100,7 @@ const STOP = new Set([
   "and",
   "for",
   "have",
+  "has",
   "does",
   "what",
   "about",
@@ -113,7 +114,14 @@ const STOP = new Set([
   "any",
   "are",
   "how",
-  "much"
+  "much",
+  "want",
+  "know",
+  "whether",
+  "please",
+  "tell",
+  "place",
+  "restaurant"
 ]);
 
 export function menuItemsFromPage(
