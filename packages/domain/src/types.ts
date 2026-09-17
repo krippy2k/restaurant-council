@@ -33,14 +33,20 @@ export interface EventSearchArea {
   providerPlaceId?: string;
 }
 
+export interface EventRestaurantSearchPolicy {
+  minimumOpenAfterEventMinutes: number;
+}
+
 export interface Event {
   id: string;
   ownerId: string;
   name: string;
   date?: string;
+  timezone?: string;
   locationLabel?: string;
   location?: EventLocation;
   searchArea?: EventSearchArea;
+  restaurantSearchPolicy?: EventRestaurantSearchPolicy;
   status: EventStatus;
   createdAt: string;
   updatedAt: string;

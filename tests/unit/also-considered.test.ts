@@ -53,4 +53,18 @@ describe("also-considered reasons", () => {
     });
     expect(reasons).toEqual(["A solid option, but the Council ranked other restaurants higher."]);
   });
+
+  it("explains a restaurant that closes too soon", () => {
+    const reasons = whyNotRecommended({
+      restaurant: {
+        ...restaurant,
+        dietaryAssessments: [],
+        hoursAssessment: { status: "closes-too-soon", applicablePeriod: { opensAt: "", closesAt: "" } }
+      },
+      evaluations: [{ participantId: "usr_gee", score: 80, label: "Good match", rejected: false }],
+      constraints: [],
+      topScores: [88]
+    });
+    expect(reasons.some((item) => item.toLowerCase().includes("closes too soon"))).toBe(true);
+  });
 });

@@ -14,7 +14,7 @@ import {
   createPersonalAgentPrincipal,
   createUserPrincipal
 } from "@rc/auth";
-import { mergeHumanEvidenceIntoCandidates, reevaluateCouncil } from "@rc/orchestration";
+import { mergeHumanEvidenceIntoCandidates, mergeRestaurantMedia, reevaluateCouncil } from "@rc/orchestration";
 import {
   decisionsForAgentContext,
   publicRejectionCopy,
@@ -140,7 +140,7 @@ function snapshot(extra: Partial<CouncilSnapshot> = {}): CouncilSnapshot {
 }
 
 describe("verification tasks", () => {
-  it("creates a task for a promising candidate with uncertain dietary evidence", () => {
+  it("creates a task for a candidate with uncertain dietary evidence", () => {
     const tasks = verificationTasksFromCouncil({
       eventId: "evt_a",
       candidates: snapshot().candidates,
@@ -154,7 +154,7 @@ describe("verification tasks", () => {
     expect(tasks[0]?.status).toBe("open");
   });
 
-  it("skips rejected or weak candidates and existing open tasks", () => {
+  it("skips rejected restaurants and existing open tasks", () => {
     const tasks = verificationTasksFromCouncil({
       eventId: "evt_a",
       candidates: snapshot().candidates,
@@ -174,6 +174,44 @@ describe("verification tasks", () => {
       existing: [openTask()]
     });
     expect(duplicates).toEqual([]);
+  });
+
+  it("still asks for verification when the council score is low", () => {
+    const low = candidate("res_low");
+    const tasks = verificationTasksFromCouncil({
+      eventId: "evt_a",
+      candidates: [low],
+      constraints: snapshot().constraints,
+      evaluations: [
+        evaluation("res_low", "usr_gee", { score: 40 }),
+        evaluation("res_low", "usr_mike", { score: 38 })
+      ],
+      existing: []
+    });
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]?.restaurantId).toBe("res_low");
+  });
+
+  it("asks someone to verify unknown opening hours", () => {
+    const unknownHours = candidate("res_hours", {
+      dietaryAssessments: [],
+      hoursAssessment: {
+        restaurantId: "res_hours",
+        status: "unknown",
+        eventDateTime: "2026-09-19T19:00:00.000Z",
+        minimumOpenAfterEventMinutes: 60,
+        requiredOpenUntil: "2026-09-19T20:00:00.000Z"
+      }
+    });
+    const tasks = verificationTasksFromCouncil({
+      eventId: "evt_a",
+      candidates: [unknownHours],
+      constraints: snapshot().constraints,
+      evaluations: [evaluation("res_hours", "usr_gee", { score: 80 })],
+      existing: []
+    });
+    expect(tasks.some((task) => task.requirementType === "opening-hours")).toBe(true);
+    expect(tasks.find((task) => task.requirementType === "opening-hours")?.question).toMatch(/open/i);
   });
 
   it("claims, prevents invalid claim, releases, and completes", () => {
@@ -588,5 +626,26 @@ describe("council re-evaluation", () => {
     });
     const recommended = next.recommendations.find((item) => item.candidate.id === "res_coopers");
     expect(recommended?.candidate.photos?.[0]?.providerPhotoId).toBe("places/ChIJ/photos/coopers");
+  });
+});
+
+describe("restaurant media merge", () => {
+  it("keeps known photos when a later candidate copy has none", () => {
+    const base = candidate("res_coopers");
+    const merged = mergeRestaurantMedia(
+      { ...base, photos: undefined },
+      {
+        ...base,
+        photos: [
+          {
+            provider: "google",
+            providerPhotoId: "places/ChIJ/photos/keep",
+            width: 1600,
+            height: 900
+          }
+        ]
+      }
+    );
+    expect(merged.photos?.[0]?.providerPhotoId).toBe("places/ChIJ/photos/keep");
   });
 });

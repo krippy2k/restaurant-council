@@ -55,6 +55,16 @@ export class AuthorizedRestaurantSearch implements RestaurantSearchTool {
     const restaurant = await this.service.getDetails(id);
     return restaurantToCandidate(restaurant, restaurant.location, { details: true });
   }
+
+  async enrichHours(id: string, principal: Principal): Promise<RestaurantCandidate & { hoursCacheHit?: boolean }> {
+    assertAuthorized({
+      principal,
+      action: "restaurant.get",
+      resource: { type: "restaurant" }
+    });
+    const { restaurant, cacheHit } = await this.service.getHours(id);
+    return { ...restaurantToCandidate(restaurant, restaurant.location), hoursCacheHit: cacheHit };
+  }
 }
 
 export class FixtureRestaurantSearch extends AuthorizedRestaurantSearch {

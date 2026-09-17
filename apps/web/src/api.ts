@@ -41,16 +41,23 @@ export const api = {
       dietary?: "mock" | "live";
     }>("/api/health"),
   me: () => request<{ user: User }>("/api/auth/me"),
-  signin: (email: string, displayName: string) =>
-    request<{ user: User }>("/api/auth/dev-signin", {
+  signin: (email: string, displayName?: string) =>
+    request<{ user?: User; needsDisplayName?: boolean; email?: string }>("/api/auth/dev-signin", {
       method: "POST",
       body: JSON.stringify({ email, displayName })
     }),
+  pendingInvitations: () =>
+    request<{ invitations: PendingInvitation[] }>("/api/auth/invitations"),
+  acceptPendingInvitation: (id: string) =>
+    request<{ eventId: string }>(`/api/auth/invitations/${id}/accept`, { method: "POST" }),
+  devIdentities: () =>
+    request<{ people: Array<{ email: string; displayName?: string }> }>("/api/auth/dev-identities"),
   signout: () => request("/api/auth/signout", { method: "POST" }),
   events: () => request<{ events: EventSummary[] }>("/api/events"),
   createEvent: (input: {
     name: string;
     date?: string;
+    timezone?: string;
     locationLabel?: string;
     searchArea?: EventSearchArea;
     radiusMiles?: number;
@@ -69,7 +76,7 @@ export const api = {
   deleteEvent: (id: string) =>
     request<{ ok: boolean }>(`/api/events/${id}`, { method: "DELETE" }),
   invite: (eventId: string, email: string) =>
-    request<{ invitation: Invitation; devInviteUrl?: string }>(
+    request<{ invitation: Invitation }>(
       `/api/events/${eventId}/invitations`,
       { method: "POST", body: JSON.stringify({ email }) }
     ),
@@ -107,6 +114,10 @@ export const api = {
     request<{ snapshot: CouncilSnapshot }>(`/api/events/${eventId}/council/start`, {
       method: "POST"
     }),
+  clearPlacesCache: (eventId: string) =>
+    request<{ ok: boolean }>(`/api/events/${eventId}/council/cache/clear`, {
+      method: "POST"
+    }),
   council: (eventId: string) =>
     request<{ snapshot: CouncilSnapshot | null }>(`/api/events/${eventId}/council`),
   audit: (eventId: string) =>
@@ -137,10 +148,14 @@ export const api = {
       body: JSON.stringify({ intent, text, timezone })
     }),
   createEventFromIntent: (intent: EventCreationIntent, timezone: string) =>
-    request<{ event: EventSummary }>("/api/events/from-intent", {
+    request<{ event: EventSummary; invitations?: Array<{ email: string }> }>("/api/events/from-intent", {
       method: "POST",
       body: JSON.stringify({ intent, timezone })
     }),
+  restaurantDetails: (restaurantId: string) =>
+    request<{ restaurant: CouncilSnapshot["candidates"][number] }>(
+      `/api/restaurants/${encodeURIComponent(restaurantId)}`
+    ),
   collaboration: (eventId: string) =>
     request<CollaborationState>(`/api/events/${eventId}/collaboration`),
   postChat: (eventId: string, text: string, relatedRestaurantId?: string) =>
@@ -172,17 +187,70 @@ export const api = {
     request<{ prompt: PreferencePrompt }>(`/api/events/${eventId}/preference-prompts/${promptId}/respond`, {
       method: "POST",
       body: JSON.stringify({ accepted })
+    }),
+  retryAgent: (eventId: string, invocationId: string) =>
+    request<{ invocation: { id: string; status: string } }>(
+      `/api/events/${eventId}/agents/invocations/${invocationId}/retry`,
+      { method: "POST" }
+    ),
+  requestVerification: (
+    eventId: string,
+    restaurantId: string,
+    input: { question?: string; requirementType?: string; requirementValue?: unknown }
+  ) =>
+    request<{ task: VerificationTask }>(`/api/events/${eventId}/restaurants/${restaurantId}/verifications`, {
+      method: "POST",
+      body: JSON.stringify(input)
     })
 };
 
 export interface ChatMessage {
   id: string;
   eventId: string;
-  sender: { type: "user"; userId: string } | { type: "council" } | { type: "system" };
+  sender:
+    | { type: "user"; userId: string }
+    | { type: "agent"; agentId: string }
+    | { type: "council" }
+    | { type: "system" };
   messageType: string;
   text?: string;
   relatedRestaurantId?: string;
+  relatedRestaurantIds?: string[];
   relatedActionId?: string;
+  relatedAgentInvocationId?: string;
+  cards?: Array<
+    | {
+        type: "menu-item";
+        restaurantId: string;
+        item: { name: string; description?: string; price?: number; currency?: string };
+        evidenceId: string;
+        sourceName?: string;
+        sourceUrl?: string;
+        checkedAt?: string;
+      }
+    | {
+        type: "reservation-link";
+        restaurantId: string;
+        provider: string;
+        url: string;
+        label: string;
+        evidenceId: string;
+      }
+    | {
+        type: "fact";
+        restaurantId: string;
+        label: string;
+        value: string;
+        evidenceId?: string;
+        sourceName?: string;
+      }
+  >;
+  offerVerification?: {
+    restaurantId: string;
+    question: string;
+    requirementType: string;
+    requirementValue?: unknown;
+  };
   createdAt: string;
   editedAt?: string;
   deletedAt?: string;
@@ -286,6 +354,7 @@ export interface EventCreationIntent {
   price?: { maxPerPerson?: number; strength: string; description?: string };
   requirements?: Array<{ type: string; strength: string }>;
   invitees?: Array<{ displayName?: string; email?: string }>;
+  restaurantSearchPolicy?: { minimumOpenAfterEventMinutes: number };
   missingFields: Array<{ field: string; required: boolean; reason?: string }>;
   ambiguities: Array<{ field: string; description: string; candidates?: unknown[] }>;
   source: "natural-language" | "form";
@@ -328,8 +397,10 @@ export interface EventSummary {
   ownerId: string;
   name: string;
   date?: string;
+  timezone?: string;
   locationLabel?: string;
   searchArea?: EventSearchArea;
+  restaurantSearchPolicy?: { minimumOpenAfterEventMinutes: number };
   status: string;
 }
 
@@ -348,6 +419,16 @@ export interface Invitation {
   destination: string;
   expiresAt: string;
   acceptedAt?: string;
+  createdAt: string;
+}
+
+export interface PendingInvitation {
+  id: string;
+  eventId: string;
+  eventName: string;
+  date?: string;
+  locationLabel?: string;
+  inviterName: string;
   createdAt: string;
 }
 
@@ -406,6 +487,23 @@ export interface CouncilSnapshot {
     photos?: RestaurantPhoto[];
     reviews?: RestaurantReview[];
     providerAttribution?: string;
+    hours?: string;
+    hoursWeekdayText?: string[];
+    openingHours?: {
+      timeZone?: string;
+      weekdayText?: string[];
+      sourceType?: "current" | "regular" | "human";
+    };
+    hoursAssessment?: {
+      restaurantId: string;
+      status: "suitable" | "closes-too-soon" | "closed" | "unknown";
+      eventDateTime: string;
+      minimumOpenAfterEventMinutes: number;
+      requiredOpenUntil: string;
+      applicablePeriod?: { opensAt: string; closesAt?: string };
+      source?: { provider: string; retrievedAt: string; type?: "current" | "regular" | "human" };
+      weekdayText?: string[];
+    };
     dietaryAssessments?: Array<{
       restaurantId: string;
       requirement: string;
@@ -449,6 +547,21 @@ export interface CouncilSnapshot {
     }>;
   }>;
   events: Array<{ type: string; at: string; message: string }>;
+  agentLogs?: Array<{
+    id: string;
+    at: string;
+    completedAt?: string;
+    kind: "llm" | "tool";
+    status: "running" | "ok" | "error";
+    agent?: { kind: "personal" | "negotiator" | "council"; name: string; userId?: string };
+    step?: string;
+    name: string;
+    model?: string;
+    tool?: { id: string; name: string };
+    input?: unknown;
+    output?: unknown;
+    error?: string;
+  }>;
   progress?: {
     phase: string;
     step: string;
@@ -460,6 +573,38 @@ export interface CouncilSnapshot {
     startedAt: string;
     sessionStartedAt: string;
     completedAt?: string;
+    spend?: {
+      currency: "USD";
+      estimatedUsd: number;
+      agents: {
+        calls: number;
+        inputTokens: number;
+        outputTokens: number;
+        cachedInputTokens?: number;
+        estimatedUsd: number;
+        byModel?: Array<{
+          model: string;
+          calls: number;
+          inputTokens: number;
+          outputTokens: number;
+          cachedInputTokens?: number;
+          estimatedUsd: number;
+        }>;
+      };
+      places: {
+        calls: number;
+        search: number;
+        details: number;
+        hours: number;
+        photos: number;
+        cachedCalls?: number;
+        cachedSearch?: number;
+        cachedHours?: number;
+        cachedDetails?: number;
+        cachedPhotos?: number;
+        estimatedUsd: number;
+      };
+    };
   };
   error?: string;
 }

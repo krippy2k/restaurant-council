@@ -1,6 +1,5 @@
 import type { PersonalAgentPrincipal } from "@rc/auth";
 import type { CandidateEvaluation, CouncilConstraint, RestaurantCandidate } from "@rc/protocol";
-import { AppError, ErrorCodes } from "@rc/shared";
 import { assessConstraint } from "./constraint-check.ts";
 import type { AgentRuntime } from "./runtime.ts";
 import { EvaluationsLlmSchema } from "./schemas.ts";
@@ -177,15 +176,7 @@ export async function evaluateCandidates(input: {
       }))
     }),
     schema: EvaluationsLlmSchema
-  }).catch((error: unknown) => {
-    throw new AppError(
-      ErrorCodes.AGENT_RUNTIME_FAILED,
-      error instanceof Error
-        ? `Personal agent evaluation failed: ${error.message}`
-        : "Personal agent evaluation failed",
-      502
-    );
-  });
+  }).catch(() => ({ evaluations: [] }));
   const byId = new Map(result.evaluations.map((item) => [item.candidateId, item]));
   return baseline.map((item) =>
     mergeEvaluation(item, byId.get(item.candidateId), hasPrivate)

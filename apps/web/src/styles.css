@@ -97,6 +97,68 @@ p {
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.dev-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.dev-switcher label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dev-switcher select {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 12px;
+  border-radius: 999px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+}
+
+.dev-switcher-name {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  background: #fffaf3;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.dev-switcher-name p {
+  margin: 0;
+  flex: 1 1 100%;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+
+.dev-switcher-name input {
+  flex: 1 1 140px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 12px;
+}
+
+.invite-inbox {
+  margin: 0 0 24px;
 }
 
 .btn {
@@ -280,6 +342,236 @@ p {
   margin: 0;
 }
 
+.progress-meta dd[title] {
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-cache-actions {
+  margin-top: 2px;
+}
+
+.progress-cache-actions .btn {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.council-activity {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.council-activity > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.council-activity > summary::-webkit-details-marker {
+  display: none;
+}
+
+.council-activity > summary::after {
+  content: "▸";
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.council-activity[open] > summary::after {
+  content: "▾";
+}
+
+.council-activity .log {
+  margin-top: 10px;
+}
+
+.council-log-tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.council-log-tabs button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.council-log-tabs button.active {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+.agent-logs {
+  margin-top: 10px;
+  max-height: 480px;
+  overflow: auto;
+}
+
+.agent-log-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.agent-log-group {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-log-group header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.agent-log-entry,
+.agent-log-bundle {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.55);
+  padding: 8px 10px;
+}
+
+.agent-log-entry > summary,
+.agent-log-bundle > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+}
+
+.agent-log-entry > summary::-webkit-details-marker,
+.agent-log-bundle > summary::-webkit-details-marker {
+  display: none;
+}
+
+.agent-log-kind {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.agent-log-name {
+  font-weight: 600;
+}
+
+.agent-log-model {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--forest);
+  background: rgba(23, 53, 44, 0.08);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.agent-log-model-line {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.progress-model-spend {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.progress-model-spend li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.agent-log-status {
+  margin-left: auto;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.agent-log-status.ok {
+  color: var(--private);
+}
+
+.agent-log-status.running {
+  color: var(--brass);
+}
+
+.agent-log-status.error {
+  color: var(--danger);
+}
+
+.agent-log-entry h4 {
+  margin: 10px 0 4px;
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.agent-log-json {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--forest);
+  color: #f3ece1;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow: auto;
+  max-height: 220px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-log-error {
+  margin: 8px 0 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.agent-log-bundle ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.agent-log-bundle .agent-log-entry {
+  background: var(--paper);
+}
+
 @media (max-width: 700px) {
   .progress-steps {
     grid-template-columns: 1fr 1fr;
@@ -310,6 +602,11 @@ textarea {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+  align-items: start;
+}
+
+.council-sidebar {
+  align-content: start;
 }
 
 .card-list {
@@ -538,6 +835,46 @@ textarea {
   overflow: hidden;
 }
 
+.hours-status {
+  margin: 6px 0 10px;
+  font-size: 14px;
+}
+
+.hours-status.compact {
+  margin: 4px 0 8px;
+  font-size: 13px;
+}
+
+.hours-weekday {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hours-headline {
+  margin: 0;
+  font-weight: 600;
+}
+
+.hours-status.ok .hours-headline {
+  color: var(--forest);
+}
+
+.hours-status.bad .hours-headline {
+  color: var(--danger);
+}
+
+.hours-status.unknown .hours-headline {
+  color: var(--brass);
+}
+
+.hours-status ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
 .dietary-compat {
   margin: 8px 0 12px;
 }
@@ -654,6 +991,19 @@ textarea {
   outline-offset: 2px;
 }
 
+.resto-details-toggle {
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: center;
+}
+
+.resto-details-toggle-btn {
+  padding: 5px 12px;
+  font-size: 13px;
+}
+
 .resto-detail-panel {
   margin-top: 12px;
   display: grid;
@@ -669,6 +1019,15 @@ textarea {
   margin-top: 20px;
   padding-top: 32px;
   border-top: 1px solid var(--line);
+}
+
+.evaluating-placeholder {
+  margin: 0;
+  padding: 28px 16px;
+  text-align: center;
+  font-family: var(--serif);
+  font-size: 22px;
+  color: var(--muted);
 }
 
 .also-why {
@@ -704,6 +1063,43 @@ textarea {
   gap: 6px;
   max-height: 240px;
   overflow: auto;
+}
+
+.constraint-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.constraint-group h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.constraint-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.constraint-group li {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.constraint-type {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+
+.constraint-group li p {
+  margin: 4px 0 0;
 }
 
 .error {
@@ -769,25 +1165,47 @@ textarea {
 
 .chat-panel {
   margin-top: 28px;
+  align-self: start;
+  align-content: start;
+  gap: 8px;
+  padding: 14px 16px;
+}
+
+.stack > .chat-panel {
+  margin-top: 0;
+}
+
+.chat-panel h2 {
+  margin: 0;
+  font-size: 20px;
 }
 
 .chat-log {
   display: grid;
-  gap: 10px;
-  max-height: 360px;
+  gap: 8px;
+  max-height: 220px;
   overflow: auto;
-  padding: 4px 2px;
+  margin: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .chat-bubble {
   background: rgba(255, 255, 255, 0.62);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 10px 12px;
+  border-radius: 12px;
+  padding: 8px 10px;
 }
 
 .chat-bubble p {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
+}
+
+.chat-bubble .btn {
+  margin-top: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
 }
 
 .chat-bubble.mine {
@@ -799,16 +1217,61 @@ textarea {
   border-color: rgba(154, 123, 60, 0.28);
 }
 
+.chat-bubble.agent {
+  background: rgba(23, 53, 44, 0.08);
+  border-color: rgba(23, 53, 44, 0.22);
+}
+
+.research-card {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.research-card p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.research-card a.btn {
+  display: inline-flex;
+  margin-top: 8px;
+  width: auto;
+}
+
 .chat-compose {
-  display: grid;
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.chat-compose .muted {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+.chat-compose textarea {
+  flex: 1 1 8rem;
+  min-height: 0;
+  height: 40px;
+  padding: 8px 10px;
+  resize: none;
+}
+
+.chat-send {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 8px 14px;
 }
 
 .chat-confirm {
   background: rgba(35, 74, 61, 0.08);
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 12px 14px;
+  padding: 10px 12px;
 }
 
 .resto-actions {

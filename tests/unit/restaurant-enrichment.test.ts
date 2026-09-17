@@ -7,6 +7,7 @@ import {
   MockRestaurantProvider,
   normalizeRating,
   normalizeReviewCount,
+  mergePhotos,
   photosFromGoogle,
   ratingAriaLabel,
   reputationBonus,
@@ -56,6 +57,28 @@ describe("photo and review mapping", () => {
     expect(photos?.[0]?.providerPhotoId).toBe("places/ChIJ/photos/abc");
     expect(photos?.[0]?.attribution).toBe("Alex R.");
     expect(selectPrimaryPhoto(photos)?.providerPhotoId).toBe("places/ChIJ/photos/abc");
+  });
+
+  it("keeps earlier photos when a later copy is empty", () => {
+    const kept = mergePhotos(
+      undefined,
+      [{ provider: "google", providerPhotoId: "places/ChIJ/photos/keep", width: 800, height: 600 }]
+    );
+    expect(kept?.[0]?.providerPhotoId).toBe("places/ChIJ/photos/keep");
+  });
+
+  it("unions photo ids instead of replacing a richer set", () => {
+    const merged = mergePhotos(
+      [{ provider: "google", providerPhotoId: "places/ChIJ/photos/new" }],
+      [
+        { provider: "google", providerPhotoId: "places/ChIJ/photos/old" },
+        { provider: "google", providerPhotoId: "places/ChIJ/photos/new" }
+      ]
+    );
+    expect(merged?.map((item) => item.providerPhotoId)).toEqual([
+      "places/ChIJ/photos/new",
+      "places/ChIJ/photos/old"
+    ]);
   });
 
   it("does not invent review authors or text", () => {
@@ -128,5 +151,170 @@ describe("mock provider enrichment", () => {
       expect(photo.contentType).toContain("image/svg+xml");
       expect(photo.body).toContain("STK");
     }
+  });
+
+  it("keeps cached photos when a later search omits them", async () => {
+    const provider = new MockRestaurantProvider();
+    const cache = new MemoryRestaurantCache();
+    const service = new RestaurantSearchService(provider, cache);
+    const first = await service.search({
+      location: { latitude: 40.758, longitude: -73.9855 },
+      radiusMeters: 8000
+    });
+    const stk = first.restaurants.find((item) => item.name === "STK");
+    expect(stk?.photos?.[0]).toBeTruthy();
+    const extra = {
+      provider: "mock" as const,
+      providerPhotoId: "mock-photo-kept",
+      width: 800,
+      height: 600
+    };
+    await cache.putRestaurant({
+      ...stk!,
+      photos: [extra]
+    });
+    const second = await service.search({
+      location: { latitude: 40.758, longitude: -73.9855 },
+      radiusMeters: 9000
+    });
+    const again = second.restaurants.find((item) => item.name === "STK");
+    expect(again?.photos?.some((item) => item.providerPhotoId === extra.providerPhotoId)).toBe(true);
+  });
+
+  it("still resolves a photo id after the cache list was replaced", async () => {
+    const provider = new MockRestaurantProvider();
+    const cache = new MemoryRestaurantCache();
+    const service = new RestaurantSearchService(provider, cache);
+    const result = await service.search({
+      location: { latitude: 40.758, longitude: -73.9855 },
+      radiusMeters: 8000
+    });
+    const stk = result.restaurants.find((item) => item.name === "STK");
+    const photoId = stk!.photos![0]!.providerPhotoId;
+    await cache.putRestaurant({ ...stk!, photos: [] });
+    const photo = await service.resolvePhoto(stk!.id, photoId);
+    expect(photo.kind).toBe("bytes");
+  });
+
+  it("does not refetch hours from the provider within a week", async () => {
+    class CountingProvider extends MockRestaurantProvider {
+      detailsCalls = 0;
+      override async getDetails(id: string, options?: { hoursOnly?: boolean }) {
+        this.detailsCalls += 1;
+        return super.getDetails(id, options);
+      }
+    }
+    const provider = new CountingProvider();
+    const cache = new MemoryRestaurantCache();
+    const service = new RestaurantSearchService(provider, cache);
+    const result = await service.search({
+      location: { latitude: 40.758, longitude: -73.9855 },
+      radiusMeters: 8000
+    });
+    const stk = result.restaurants.find((item) => item.name === "STK");
+    const first = await service.getHours(stk?.id ?? "");
+    const second = await service.getHours(stk?.id ?? "");
+    expect(first.cacheHit).toBe(true);
+    expect(second.cacheHit).toBe(true);
+    expect(provider.detailsCalls).toBe(0);
+  });
+
+  it("refetches hours after the week-long cache expires", async () => {
+    class CountingProvider extends MockRestaurantProvider {
+      detailsCalls = 0;
+      override async getDetails(id: string, options?: { hoursOnly?: boolean }) {
+        this.detailsCalls += 1;
+        return super.getDetails(id, options);
+      }
+    }
+    const provider = new CountingProvider();
+    const cache = new MemoryRestaurantCache();
+    const service = new RestaurantSearchService(provider, cache);
+    const result = await service.search({
+      location: { latitude: 40.758, longitude: -73.9855 },
+      radiusMeters: 8000
+    });
+    const stk = result.restaurants.find((item) => item.name === "STK");
+    await cache.putRestaurant({
+      ...stk!,
+      openingHours: {
+        ...stk!.openingHours,
+        retrievedAt: "2026-01-01T00:00:00.000Z"
+      }
+    });
+    const hours = await service.getHours(stk!.id);
+    expect(hours.cacheHit).toBe(false);
+    expect(provider.detailsCalls).toBe(1);
+  });
+
+  it("does not refetch full details when the same fields are still cached", async () => {
+    class CountingProvider extends MockRestaurantProvider {
+      detailsCalls = 0;
+      override async getDetails(id: string, options?: { hoursOnly?: boolean }) {
+        this.detailsCalls += 1;
+        return super.getDetails(id, options);
+      }
+    }
+    const provider = new CountingProvider();
+    const cache = new MemoryRestaurantCache();
+    const service = new RestaurantSearchService(provider, cache);
+    const result = await service.search({
+      location: { latitude: 40.758, longitude: -73.9855 },
+      radiusMeters: 8000
+    });
+    const stk = result.restaurants.find((item) => item.name === "STK");
+    const first = await service.getDetails(stk!.id);
+    const second = await service.getDetails(stk!.id);
+    expect(first.reviews?.length).toBeGreaterThan(0);
+    expect(second.reviews).toEqual(first.reviews);
+    expect(provider.detailsCalls).toBe(1);
+  });
+
+  it("reports details cache hits to the spend callback", async () => {
+    const cached: string[] = [];
+    const cache = new MemoryRestaurantCache();
+    const service = new RestaurantSearchService(new MockRestaurantProvider(), cache, {
+      onPlacesCacheHit: (kind) => cached.push(kind)
+    });
+    const result = await service.search({
+      location: { latitude: 40.758, longitude: -73.9855 },
+      radiusMeters: 8000
+    });
+    const stk = result.restaurants.find((item) => item.name === "STK");
+    await service.getDetails(stk!.id);
+    await service.getDetails(stk!.id);
+    await service.getHours(stk!.id);
+    expect(cached).toEqual(["details", "hours"]);
+  });
+
+  it("fetches full details after an hours-only lookup because more fields are needed", async () => {
+    class CountingProvider extends MockRestaurantProvider {
+      detailsCalls = 0;
+      override async getDetails(id: string, options?: { hoursOnly?: boolean }) {
+        this.detailsCalls += 1;
+        return super.getDetails(id, options);
+      }
+    }
+    const provider = new CountingProvider();
+    const cache = new MemoryRestaurantCache();
+    const service = new RestaurantSearchService(provider, cache);
+    const result = await service.search({
+      location: { latitude: 40.758, longitude: -73.9855 },
+      radiusMeters: 8000
+    });
+    const stk = result.restaurants.find((item) => item.name === "STK");
+    await cache.putRestaurant({
+      ...stk!,
+      detailsCoverage: "hours",
+      detailsRetrievedAt: new Date().toISOString(),
+      openingHours: { ...stk!.openingHours, retrievedAt: new Date().toISOString() }
+    });
+    await service.getHours(stk!.id);
+    expect(provider.detailsCalls).toBe(0);
+    await service.getDetails(stk!.id);
+    expect(provider.detailsCalls).toBe(1);
+    await service.getDetails(stk!.id);
+    await service.getHours(stk!.id);
+    expect(provider.detailsCalls).toBe(1);
   });
 });

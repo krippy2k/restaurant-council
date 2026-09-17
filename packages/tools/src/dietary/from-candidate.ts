@@ -30,6 +30,12 @@ export function candidateAsRestaurant(candidate: RestaurantCandidate): Restauran
     attributes: {
       vegetarian: candidate.dietaryOptions?.includes("vegetarian"),
       outdoorSeating: candidate.outdoorSeating
-    }
+    },
+    openingHours: candidate.openingHours ??
+      (candidate.hoursWeekdayText
+        ? { weekdayText: candidate.hoursWeekdayText }
+        : candidate.hours
+          ? { weekdayText: [candidate.hours] }
+          : undefined)
   };
 }

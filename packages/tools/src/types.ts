@@ -23,6 +23,7 @@ export interface RestaurantSearchTool {
     principal: Principal
   ): Promise<RestaurantCandidate[]>;
   getRestaurant(id: string, principal: Principal): Promise<RestaurantDetails>;
+  enrichHours?(id: string, principal: Principal): Promise<RestaurantCandidate & { hoursCacheHit?: boolean }>;
   discover?(
     request: RestaurantSearchRequest,
     principal: Principal

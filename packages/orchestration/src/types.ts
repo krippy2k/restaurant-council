@@ -9,6 +9,7 @@ import type {
 } from "@rc/domain";
 import type { CouncilClientEvent, CouncilConstraint, CouncilProgress, CouncilSnapshot } from "@rc/protocol";
 import type { RestaurantSearchTool, DietaryAnalyzer } from "@rc/tools";
+import type { CouncilSpendTracker } from "./spend.ts";
 
 export interface CouncilRunInput {
   eventId: string;
@@ -28,6 +29,8 @@ export interface CouncilDependencies {
   restaurants: RestaurantSearchTool;
   dietary?: DietaryAnalyzer;
   runtime?: AgentRuntime;
+  spend?: CouncilSpendTracker;
+  previousSnapshot?: CouncilSnapshot;
   emit(event: CouncilClientEvent, snapshot: CouncilSnapshot): Promise<void>;
   persist(snapshot: CouncilSnapshot): Promise<void>;
   reportProgress?(progress: CouncilProgress, snapshot: CouncilSnapshot): Promise<void>;

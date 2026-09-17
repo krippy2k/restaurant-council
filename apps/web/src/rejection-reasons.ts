@@ -164,6 +164,29 @@ export function actualForConstraint(type: string, restaurant: RestaurantView): u
   }
 }
 
+export function constraintTypeLabel(type: string): string {
+  return TYPE_LABELS[type] ?? type.replaceAll("_", " ").toLowerCase();
+}
+
+export function constraintPriorityLabel(priority: string): string {
+  if (priority === "HARD") return "Required";
+  if (priority === "HIGH") return "High priority";
+  if (priority === "MEDIUM") return "Medium priority";
+  if (priority === "LOW") return "Low priority";
+  return priority.toLowerCase();
+}
+
+export function formatConstraintDetail(type: string, value: unknown): string {
+  if (type === "OUTDOOR_SEATING") {
+    if (value === true || value === "true") return "Needed";
+    if (value === false || value === "false") return "Not needed";
+  }
+  if (type === "MAX_DISTANCE_KM" && typeof value === "number") {
+    return `Within about ${Math.max(1, Math.round(value / 1.609))} miles`;
+  }
+  return formatReasonValue(type, value);
+}
+
 export function formatReasonValue(constraintType: string, value: unknown): string {
   if (constraintType === "MAX_PRICE_LEVEL") {
     if (typeof value === "number") {

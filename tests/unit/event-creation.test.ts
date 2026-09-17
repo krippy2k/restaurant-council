@@ -2,6 +2,7 @@ import {
   applyDraft,
   EventCreationAgent,
   intentFromText,
+  mergeIntent,
   MockEventIntentParser,
   preferencesFromIntent,
   summarizeIntent,
@@ -59,9 +60,15 @@ describe("natural language event intent parser", () => {
       "2026-09-17"
     );
     expect((await parser.parse("next Friday near Bamford Park", CONTEXT)).date).toBe("2026-09-25");
-    expect((await parser.parse("around 7 near Bamford Park", CONTEXT)).time).toMatchObject({
+    const aroundSeven = await parser.parse("around 7 near Bamford Park", CONTEXT);
+    expect(aroundSeven.time).toMatchObject({
       time: "19:00",
       approximate: true
+    });
+    expect(aroundSeven.price).toBeUndefined();
+    expect((await parser.parse("around $25 near Bamford Park", CONTEXT)).price).toMatchObject({
+      maxPerPerson: 25,
+      strength: "preferred"
     });
     expect((await parser.parse("party of 8 near Bamford Park", CONTEXT)).partySize).toBe(8);
     expect((await parser.parse("two adults and three kids near Bamford Park", CONTEXT)).partySize).toBe(5);
@@ -78,6 +85,30 @@ describe("natural language event intent parser", () => {
     expect((await parser.parse("one person is vegetarian near Bamford Park", CONTEXT)).dietaryRequirements).toEqual(
       expect.arrayContaining([expect.objectContaining({ requirement: "vegetarian", strength: "required" })])
     );
+    expect(
+      (await parser.parse(
+        "near Bamford Park Saturday at 3pm that stays open for at least two hours after we arrive",
+        CONTEXT
+      )).restaurantSearchPolicy
+    ).toEqual({ minimumOpenAfterEventMinutes: 120 });
+  });
+
+  it("does not treat arrival time as a per-person budget", () => {
+    const prompt = "Kid friendly lunch spot near Hard Rock Stadium in Miami Gardens. Around 1pm.";
+    const intent = intentFromText(prompt, CONTEXT);
+    expect(intent.price).toBeUndefined();
+    expect(intent.time).toMatchObject({ time: "13:00", approximate: true });
+    expect(intent.requirements).toEqual([{ type: "kid-friendly", strength: "required" }]);
+    expect(intent.location?.query.toLowerCase()).toMatch(/hard rock stadium/);
+    expect(summarizeIntent(intent, CONTEXT.timezone)).not.toMatch(/\$1/);
+
+    const applied = applyDraft(prompt, CONTEXT, {
+      eventType: "restaurant",
+      source: "natural-language",
+      price: { maxPerPerson: 1, strength: "required" },
+      time: { time: "13:00", approximate: true }
+    });
+    expect(applied.price).toBeUndefined();
   });
 
   it("keeps unmentioned fields when the user changes radius and time", async () => {
@@ -127,6 +158,25 @@ describe("natural language event intent parser", () => {
     const prefs = preferencesFromIntent(parsed);
     expect(prefs.some((item) => item.category === "dietary")).toBe(true);
     expect(JSON.stringify(prefs)).not.toMatch(/jessica/i);
+  });
+
+  it("extracts invitee emails from the event description", async () => {
+    const intent = intentFromText(
+      "Kid friendly lunch near Bamford Park. Invite sarah@example.com and Alex at alex@example.com.",
+      CONTEXT
+    );
+    expect(intent.invitees).toEqual(
+      expect.arrayContaining([
+        { email: "sarah@example.com" },
+        { displayName: "Alex", email: "alex@example.com" }
+      ])
+    );
+    expect(summarizeIntent(intent, CONTEXT.timezone)).toMatch(/sarah@example.com/i);
+
+    const modified = mergeIntent(intent, intentFromText("Also invite pat@example.com", CONTEXT));
+    expect(modified.invitees?.map((item) => item.email)).toEqual(
+      expect.arrayContaining(["sarah@example.com", "alex@example.com", "pat@example.com"])
+    );
   });
 });
 

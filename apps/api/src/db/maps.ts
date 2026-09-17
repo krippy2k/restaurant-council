@@ -2,6 +2,7 @@ import type {
   AuditEvent,
   Event,
   EventMember,
+  EventRestaurantSearchPolicy,
   EventSearchAreaSource,
   Invitation,
   Preference,
@@ -55,6 +56,8 @@ export function mapEvent(row: Record<string, unknown>): Event {
             }
           : undefined,
     status: row.status as Event["status"],
+    timezone: row.timezone ? String(row.timezone) : undefined,
+    restaurantSearchPolicy: parseSearchPolicy(row.restaurant_search_policy),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   };
@@ -142,4 +145,16 @@ export function mapAudit(row: Record<string, unknown>): AuditEvent {
 
 export function parseSnapshot(json: string): CouncilSnapshot {
   return JSON.parse(json) as CouncilSnapshot;
+}
+
+function parseSearchPolicy(value: unknown): EventRestaurantSearchPolicy | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    const minutes = Number((parsed as { minimumOpenAfterEventMinutes?: unknown }).minimumOpenAfterEventMinutes);
+    if (!Number.isFinite(minutes)) return undefined;
+    return { minimumOpenAfterEventMinutes: Math.min(360, Math.max(15, Math.round(minutes))) };
+  } catch {
+    return undefined;
+  }
 }

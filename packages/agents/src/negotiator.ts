@@ -6,7 +6,6 @@ import type {
   RestaurantCandidate
 } from "@rc/protocol";
 import type { AgentRuntime } from "./runtime.ts";
-import { AppError, ErrorCodes } from "@rc/shared";
 import { publicRejectionReasons } from "./rejection-reasons.ts";
 import { NegotiationLlmSchema } from "./schemas.ts";
 
@@ -194,14 +193,8 @@ export async function negotiate(input: {
       }),
       schema: NegotiationLlmSchema
     });
-  } catch (error) {
-    throw new AppError(
-      ErrorCodes.AGENT_RUNTIME_FAILED,
-      error instanceof Error
-        ? `Negotiator model call failed: ${error.message}`
-        : "Negotiator model call failed",
-      502
-    );
+  } catch {
+    return fallback;
   }
 
   const byId = new Map(viable.map((item) => [item.candidate.id, item]));

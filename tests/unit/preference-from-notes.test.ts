@@ -25,23 +25,24 @@ describe("natural-language preference notes", () => {
       text: "I need it to be under $30. Please keep it quiet. I also can't have gluten.",
       requestedVisibility: "PUBLIC",
       runtime: {
-        completeStructured: async () => ({
-          publicConstraints: [
-            { type: "MAX_PRICE_LEVEL", value: 2, priority: "HIGH" },
-            {
-              type: "DIETARY",
-              value: [{ requirement: "gluten-free", strength: "required", evidenceRequirement: "normal" }],
-              priority: "HARD"
-            }
-          ],
-          privateConstraints: [
-            {
-              type: "DIETARY",
-              value: [{ requirement: "gluten-free", strength: "required", evidenceRequirement: "strict" }],
-              priority: "HARD"
-            }
-          ]
-        })
+        completeStructured: async ({ schema }) =>
+          schema.parse({
+            publicConstraints: [
+              { type: "MAX_PRICE_LEVEL", value: 2, priority: "HIGH" },
+              {
+                type: "DIETARY",
+                value: [{ requirement: "gluten-free", strength: "required", evidenceRequirement: "normal" }],
+                priority: "HARD"
+              }
+            ],
+            privateConstraints: [
+              {
+                type: "DIETARY",
+                value: [{ requirement: "gluten-free", strength: "required", evidenceRequirement: "strict" }],
+                priority: "HARD"
+              }
+            ]
+          })
       }
     });
     expect(drafts.filter((item) => item.category === "dietary")).toHaveLength(1);

@@ -5,9 +5,32 @@ export interface RestaurantLocation {
   longitude: number;
 }
 
+export interface WeeklyOpeningPoint {
+  day: number;
+  hour: number;
+  minute: number;
+}
+
+export interface WeeklyOpeningPeriod {
+  open: WeeklyOpeningPoint;
+  close?: WeeklyOpeningPoint;
+}
+
+export interface RestaurantOpeningPeriod {
+  opensAt: string;
+  closesAt?: string;
+}
+
 export interface RestaurantOpeningHours {
   weekdayText?: string[];
   openNow?: boolean;
+  timeZone?: string;
+  retrievedAt?: string;
+  sourceType?: "current" | "regular" | "human";
+  weeklyPeriods?: WeeklyOpeningPeriod[];
+  currentWeeklyPeriods?: WeeklyOpeningPeriod[];
+  regularWeeklyPeriods?: WeeklyOpeningPeriod[];
+  datedPeriods?: RestaurantOpeningPeriod[];
 }
 
 export interface RestaurantPhoto {
@@ -66,6 +89,8 @@ export interface Restaurant {
     servesAlcohol?: boolean;
   };
   openingHours?: RestaurantOpeningHours;
+  detailsCoverage?: "hours" | "details";
+  detailsRetrievedAt?: string;
   providerMetadata?: Record<string, unknown>;
 }
 
@@ -100,7 +125,7 @@ export interface RestaurantSearchResult {
 export interface RestaurantProvider {
   readonly name: RestaurantProviderType;
   search(request: RestaurantSearchRequest): Promise<RestaurantSearchResult>;
-  getDetails(providerRestaurantId: string): Promise<Restaurant>;
+  getDetails(providerRestaurantId: string, options?: { hoursOnly?: boolean }): Promise<Restaurant>;
   getPhotoUrl?(
     photo: RestaurantPhoto,
     options?: RestaurantPhotoOptions

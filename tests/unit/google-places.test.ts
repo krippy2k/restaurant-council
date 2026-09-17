@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DETAILS_FIELD_MASK,
   DISCOVERY_FIELD_MASK,
+  HOURS_FIELD_MASK,
   GooglePlacesRestaurantProvider
 } from "@rc/tools";
 import { ErrorCodes } from "@rc/shared";
@@ -98,6 +99,49 @@ describe("Google Places provider", () => {
     expect(details.phone).toBe("(305) 555-0100");
     expect(details.reviews?.[0]?.text).toBe("Excellent food and service.");
     expect(details.reviews?.[0]?.authorName).toBe("Alex R.");
+  });
+
+  it("reports a billable Nearby Search Enterprise request", async () => {
+    const billed: Array<{ sku: string; estimatedUsd: number }> = [];
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ places: [] }), { status: 200 })) as typeof fetch;
+    const provider = new GooglePlacesRestaurantProvider("test-key", fetchImpl, {
+      onBillableRequest: (request) => billed.push(request)
+    });
+    await provider.search({
+      location: { latitude: 25.76, longitude: -80.19 },
+      radiusMeters: 4000
+    });
+    expect(billed).toEqual([
+      expect.objectContaining({
+        operation: "nearby-search",
+        sku: "Nearby Search Enterprise",
+        estimatedUsd: 0.035
+      })
+    ]);
+  });
+
+  it("uses a hours-only field mask when fetching opening hours", async () => {
+    const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get("X-Goog-FieldMask")).toBe(HOURS_FIELD_MASK);
+      return new Response(
+        JSON.stringify({
+          id: "ChIJ-test",
+          displayName: { text: "Real Steak" },
+          location: { latitude: 25.76, longitude: -80.19 },
+          timeZone: { id: "America/New_York" },
+          regularOpeningHours: {
+            weekdayDescriptions: ["Monday: 11:00 AM – 10:00 PM"],
+            periods: [{ open: { day: 1, hour: 11, minute: 0 }, close: { day: 1, hour: 22, minute: 0 } }]
+          }
+        }),
+        { status: 200 }
+      );
+    }) as typeof fetch;
+    const provider = new GooglePlacesRestaurantProvider("test-key", fetchImpl);
+    const details = await provider.getDetails("ChIJ-test", { hoursOnly: true });
+    expect(details.openingHours?.timeZone).toBe("America/New_York");
+    expect(details.openingHours?.weekdayText?.[0]).toContain("Monday");
   });
 
   it("infers a price level from Google's dollar range when priceLevel is missing", async () => {

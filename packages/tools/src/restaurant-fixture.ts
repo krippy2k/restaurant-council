@@ -13,6 +13,8 @@ import { restaurantCouncilId } from "./identity.ts";
 import { haversineKm } from "./geo.ts";
 import { metersToKm } from "./domain.ts";
 import { placeholderSvg, typicalPriceRangeFromLevel } from "./enrichment.ts";
+import { parseFixtureHours } from "./hours/parse-fixture.ts";
+import { nowIso } from "@rc/shared";
 import type { RestaurantDetails } from "./types.ts";
 import { restaurantToCandidate } from "./map-candidate.ts";
 
@@ -30,7 +32,7 @@ interface FixtureTemplate {
   accessibility: string[];
   dietaryOptions: string[];
   address: string;
-  hours: string;
+  hours?: string;
   phone?: string;
   email?: string;
   website?: string;
@@ -304,6 +306,80 @@ const FIXTURES: FixtureTemplate[] = [
     address: "Library corner",
     hours: "11:00 AM – 10:00 PM",
     menuHighlights: ["Turkey burger", "Chopped salad"]
+  },
+  {
+    id: "rst_hours_24",
+    name: "Night Owl Diner",
+    priceLevel: 1,
+    rating: 4.1,
+    cuisines: ["american"],
+    offsetKm: 0.5,
+    bearingDeg: 10,
+    outdoorSeating: false,
+    accessibility: ["wheelchair"],
+    dietaryOptions: ["vegetarian"],
+    address: "All-night strip",
+    hours: "Open 24 hours",
+    menuHighlights: ["Pancakes", "Club sandwich"]
+  },
+  {
+    id: "rst_hours_split",
+    name: "Siesta Kitchen",
+    priceLevel: 2,
+    rating: 4.2,
+    cuisines: ["spanish"],
+    offsetKm: 0.7,
+    bearingDeg: 40,
+    outdoorSeating: true,
+    accessibility: ["wheelchair"],
+    dietaryOptions: ["vegetarian", "gluten-free"],
+    address: "Plaza walk",
+    hours: "11:00 AM – 2:30 PM, 5:00 PM – 10:00 PM",
+    menuHighlights: ["Tapas", "Tortilla"]
+  },
+  {
+    id: "rst_hours_overnight",
+    name: "After Hours Grill",
+    priceLevel: 2,
+    rating: 4.0,
+    cuisines: ["american"],
+    offsetKm: 1.2,
+    bearingDeg: 75,
+    outdoorSeating: false,
+    accessibility: ["wheelchair"],
+    dietaryOptions: [],
+    address: "Late block",
+    hours: "5:00 PM – 2:00 AM",
+    menuHighlights: ["Smash burger"]
+  },
+  {
+    id: "rst_hours_soon",
+    name: "Early Bird Cafe",
+    priceLevel: 1,
+    rating: 4.3,
+    cuisines: ["cafe"],
+    offsetKm: 0.4,
+    bearingDeg: 330,
+    outdoorSeating: true,
+    accessibility: ["wheelchair"],
+    dietaryOptions: ["vegetarian", "vegan"],
+    address: "Morning row",
+    hours: "7:00 AM – 3:30 PM",
+    menuHighlights: ["Avocado toast"]
+  },
+  {
+    id: "rst_hours_unknown",
+    name: "Mystery Table",
+    priceLevel: 2,
+    rating: 4.2,
+    cuisines: ["american"],
+    offsetKm: 0.8,
+    bearingDeg: 190,
+    outdoorSeating: false,
+    accessibility: ["wheelchair"],
+    dietaryOptions: ["vegetarian"],
+    address: "Unlisted hours",
+    menuHighlights: ["Chef's tasting"]
   }
 ];
 
@@ -385,7 +461,13 @@ function toRestaurant(
       outdoorSeating: template.outdoorSeating,
       vegetarian: template.dietaryOptions.includes("vegetarian")
     },
-    openingHours: { weekdayText: [template.hours] },
+    openingHours: {
+      weekdayText: template.hours ? [template.hours] : undefined,
+      timeZone: "America/New_York",
+      retrievedAt: nowIso(),
+      sourceType: "regular",
+      weeklyPeriods: parseFixtureHours(template.hours)
+    },
     website: template.website,
     phone: template.phone,
     email: template.email,
@@ -412,7 +494,10 @@ export class MockRestaurantProvider implements RestaurantProvider {
     };
   }
 
-  async getDetails(providerRestaurantId: string): Promise<Restaurant> {
+  async getDetails(
+    providerRestaurantId: string,
+    _options?: { hoursOnly?: boolean }
+  ): Promise<Restaurant> {
     const template = FIXTURES.find((item) => item.id === providerRestaurantId);
     if (!template) {
       throw new AppError(ErrorCodes.NOT_FOUND, "Restaurant not found", 404);

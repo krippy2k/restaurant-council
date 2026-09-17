@@ -2,12 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { FormError } from "../FormError";
 import { api, type CollaborationState, type CouncilSnapshot, type Member, type User } from "../api";
-import { whyNotRecommended } from "../also-considered";
+import { councilScoreFor, whyNotRecommended } from "../also-considered";
 import { CouncilProgress } from "../components/CouncilProgress";
+import { EvaluationBars } from "../components/EvaluationBars";
 import { EventChat } from "../components/EventChat";
 import { RestaurantActions } from "../components/RestaurantActions";
 import { RestaurantCard } from "../components/RestaurantCard";
 import { RestaurantDetails } from "../components/RestaurantDetails";
+import {
+  constraintPriorityLabel,
+  constraintTypeLabel,
+  formatConstraintDetail
+} from "../rejection-reasons";
 
 export function CouncilPage({ user }: { user: User }) {
   const { eventId = "" } = useParams();
@@ -17,6 +23,7 @@ export function CouncilPage({ user }: { user: User }) {
   const [agentsReady, setAgentsReady] = useState<boolean | null>(null);
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
   const [collab, setCollab] = useState<CollaborationState>();
   const [discussingId, setDiscussingId] = useState<string>();
 
@@ -48,6 +55,25 @@ export function CouncilPage({ user }: { user: User }) {
     };
     return () => socket.close();
   }, [eventId]);
+
+  async function clearCache() {
+    if (
+      !window.confirm(
+        "Clear stored Places search, hours, details, photos, and dietary assessments? The next Council run will call Google again."
+      )
+    ) {
+      return;
+    }
+    setClearingCache(true);
+    setError(undefined);
+    try {
+      await api.clearPlacesCache(eventId);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setClearingCache(false);
+    }
+  }
 
   async function start() {
     setBusy(true);
@@ -92,11 +118,54 @@ export function CouncilPage({ user }: { user: User }) {
     return collab?.decisions.find((item) => item.restaurantId === restaurantId && item.userId === user.id);
   }
 
-  const alsoConsidered = useMemo(() => {
-    if (!snapshot || snapshot.status === "CREATED") return [];
-    const picked = new Set(snapshot.recommendations.map((item) => item.candidate.id));
-    return snapshot.candidates.filter((candidate) => !picked.has(candidate.id)).slice(0, 8);
+  const recommendations = useMemo(() => {
+    return [...(snapshot?.recommendations ?? [])].sort((left, right) => {
+      if (left.rejected !== right.rejected) return left.rejected ? 1 : -1;
+      return right.councilScore - left.councilScore;
+    });
   }, [snapshot]);
+
+  const councilRunning =
+    busy ||
+    Boolean(
+      snapshot?.progress &&
+        !snapshot.progress.completedAt &&
+        snapshot.status !== "COMPLETE" &&
+        snapshot.status !== "FAILED" &&
+        snapshot.status !== "CREATED"
+    );
+
+  const alsoConsidered = useMemo(() => {
+    if (!snapshot || snapshot.status !== "COMPLETE") return [];
+    const picked = new Set(snapshot.recommendations.map((item) => item.candidate.id));
+    return snapshot.candidates
+      .filter((candidate) => !picked.has(candidate.id))
+      .map((candidate) => {
+        const evaluations = snapshot.evaluations.filter((item) => item.candidateId === candidate.id);
+        return {
+          candidate,
+          evaluations,
+          score: evaluations.length ? councilScoreFor(evaluations) : undefined
+        };
+      })
+      .sort((left, right) => (right.score ?? -1) - (left.score ?? -1))
+      .slice(0, 8);
+  }, [snapshot]);
+
+  const publicConstraints = useMemo(() => {
+    const items = (snapshot?.constraints ?? []).filter(
+      (constraint) => constraint.visibility === "PUBLIC"
+    );
+    const groups = new Map<string, typeof items>();
+    for (const constraint of items) {
+      const list = groups.get(constraint.participantId) ?? [];
+      list.push(constraint);
+      groups.set(constraint.participantId, list);
+    }
+    return [...groups.entries()].sort(([left], [right]) =>
+      (names.get(left) ?? left).localeCompare(names.get(right) ?? right)
+    );
+  }, [names, snapshot]);
 
   function reasonsFor(restaurantId: string) {
     if (!snapshot) return [];
@@ -154,7 +223,12 @@ export function CouncilPage({ user }: { user: User }) {
         </div>
       </div>
       <FormError error={error} />
-      <CouncilProgress snapshot={snapshot} starting={busy} />
+      <CouncilProgress
+        snapshot={snapshot}
+        starting={busy}
+        onClearCache={isOwner ? () => void clearCache() : undefined}
+        clearingCache={clearingCache}
+      />
       {agentsReady === false ? (
         <p className="error">
           Council agents are not configured. Add OPENAI_API_KEY to .dev.vars at the
@@ -173,7 +247,7 @@ export function CouncilPage({ user }: { user: User }) {
 
       <div className="grid-2">
         <section className="stack">
-          {(snapshot?.recommendations ?? []).map((recommendation) => (
+          {recommendations.map((recommendation) => (
             <RestaurantDetails
               key={recommendation.candidate.id}
               recommendation={recommendation}
@@ -195,13 +269,25 @@ export function CouncilPage({ user }: { user: User }) {
               />
             </RestaurantDetails>
           ))}
-          {alsoConsidered.length ? (
+          {councilRunning ? (
             <div
-              className={`candidate-grid${snapshot?.recommendations.length ? " after-picks" : ""}`}
+              className={`candidate-grid${recommendations.length ? " after-picks" : ""}`}
+            >
+              <p className="evaluating-placeholder">Evaluating</p>
+            </div>
+          ) : alsoConsidered.length ? (
+            <div
+              className={`candidate-grid${recommendations.length ? " after-picks" : ""}`}
             >
               <h2>Also considered</h2>
-              {alsoConsidered.map((candidate) => (
-                <RestaurantCard key={candidate.id} restaurant={candidate} compact>
+              {alsoConsidered.map(({ candidate, evaluations, score }) => (
+                <RestaurantCard
+                  key={candidate.id}
+                  restaurant={candidate}
+                  compact
+                  kicker={score != null ? `Council score ${score}%` : undefined}
+                >
+                  <EvaluationBars evaluations={evaluations} names={names} />
                   <div className="also-why">
                     <p className="also-why-label">Why it wasn&apos;t recommended</p>
                     <ul className="also-why-list">
@@ -228,36 +314,44 @@ export function CouncilPage({ user }: { user: User }) {
             </div>
           ) : null}
         </section>
-        <aside className="panel">
-          <h2>Activity</h2>
-          <div className="log">
-            {(snapshot?.events ?? []).map((item, index) => (
-              <div key={`${item.at}-${index}`}>
-                {item.message}
+        <aside className="stack council-sidebar">
+          <section className="panel">
+            <h2>Public constraints</h2>
+            <p className="muted">
+              Private constraints stay with your Personal Agent. The group only
+              sees a conflict when one affects a restaurant.
+            </p>
+            {publicConstraints.length ? (
+              <div className="constraint-list">
+                {publicConstraints.map(([userId, constraints]) => (
+                  <section className="constraint-group" key={userId}>
+                    <h3>{names.get(userId) ?? "Member"}</h3>
+                    <ul>
+                      {constraints.map((constraint) => (
+                        <li key={constraint.id}>
+                          <div className="constraint-type">{constraintTypeLabel(constraint.type)}</div>
+                          <p>{formatConstraintDetail(constraint.type, constraint.value)}</p>
+                          <p className="muted">{constraintPriorityLabel(constraint.priority)}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
               </div>
-            ))}
-          </div>
-          <h3>Public constraints</h3>
-          <p className="muted">
-            Private constraints stay with each Personal Agent. The group only
-            sees a conflict when one affects a restaurant.
-          </p>
-          {(snapshot?.constraints ?? []).map((constraint) => (
-            <div key={constraint.id} className="muted">
-              {names.get(constraint.participantId) ?? "Member"} · {constraint.type} ·{" "}
-              {constraint.visibility}
-            </div>
-          ))}
+            ) : (
+              <p className="muted">None yet. Public preferences show up here after Council runs.</p>
+            )}
+          </section>
+          <EventChat
+            eventId={eventId}
+            user={user}
+            names={names}
+            restaurants={restaurants}
+            discussingId={discussingId}
+            onDiscussed={() => setDiscussingId(undefined)}
+          />
         </aside>
       </div>
-      <EventChat
-        eventId={eventId}
-        user={user}
-        names={names}
-        restaurants={restaurants}
-        discussingId={discussingId}
-        onDiscussed={() => setDiscussingId(undefined)}
-      />
     </div>
   );
 }

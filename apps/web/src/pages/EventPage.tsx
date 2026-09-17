@@ -12,6 +12,7 @@ import {
   type User
 } from "../api";
 import { EventChat } from "../components/EventChat";
+import { rememberDevAccount } from "../dev-accounts";
 
 export function EventPage({ user }: { user: User }) {
   const { eventId = "" } = useParams();
@@ -21,7 +22,6 @@ export function EventPage({ user }: { user: User }) {
   const [preferences, setPreferences] = useState<Preference[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [inviteEmail, setInviteEmail] = useState("sarah@example.com");
-  const [devInviteUrl, setDevInviteUrl] = useState<string>();
   const [authz, setAuthz] = useState<AuthzDemo[]>([]);
   const [error, setError] = useState<unknown>();
   const [restaurants, setRestaurants] = useState<Map<string, string>>(new Map());
@@ -56,7 +56,7 @@ export function EventPage({ user }: { user: User }) {
     form.preventDefault();
     try {
       const result = await api.invite(eventId, inviteEmail);
-      setDevInviteUrl(result.devInviteUrl);
+      rememberDevAccount({ email: result.invitation.destination });
       await refresh();
     } catch (err) {
       setError(err);
@@ -149,11 +149,9 @@ export function EventPage({ user }: { user: User }) {
               <button className="btn" type="submit">
                 Send invitation
               </button>
-              {devInviteUrl ? (
-                <p>
-                  Dev invitation: <a href={devInviteUrl}>{devInviteUrl}</a>
-                </p>
-              ) : null}
+              <p className="muted">
+                They’ll see this invite when they sign in with that email. No code to paste.
+              </p>
               {invitations.map((invitation) => (
                 <div key={invitation.id} className="muted">
                   {invitation.destination} ·{" "}

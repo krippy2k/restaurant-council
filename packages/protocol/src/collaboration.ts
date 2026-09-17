@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ResearchResultCardSchema, VerificationOfferSchema } from "./research.ts";
 
 export const VerificationMethodSchema = z.enum(["phone", "in-person", "email", "website", "other"]);
 export const VerificationStatusSchema = z.enum(["open", "claimed", "completed", "cancelled"]);
@@ -19,9 +20,11 @@ export const CandidateStatusSchema = z.enum([
   "finalist",
   "selected"
 ]);
-export const ChatSenderTypeSchema = z.enum(["user", "council", "system"]);
+export const ChatSenderTypeSchema = z.enum(["user", "council", "system", "agent"]);
 export const ChatMessageTypeSchema = z.enum([
   "text",
+  "agent-request",
+  "agent-response",
   "council-update",
   "verification-update",
   "restaurant-decision",
@@ -102,13 +105,18 @@ export const EventChatMessageSchema = z.object({
   eventId: z.string(),
   sender: z.discriminatedUnion("type", [
     z.object({ type: z.literal("user"), userId: z.string() }),
+    z.object({ type: z.literal("agent"), agentId: z.string() }),
     z.object({ type: z.literal("council") }),
     z.object({ type: z.literal("system") })
   ]),
   messageType: ChatMessageTypeSchema,
   text: z.string().max(2000).optional(),
   relatedRestaurantId: z.string().optional(),
+  relatedRestaurantIds: z.array(z.string()).optional(),
   relatedActionId: z.string().optional(),
+  relatedAgentInvocationId: z.string().optional(),
+  cards: z.array(ResearchResultCardSchema).optional(),
+  offerVerification: VerificationOfferSchema.optional(),
   createdAt: z.string(),
   editedAt: z.string().optional(),
   deletedAt: z.string().optional()
@@ -198,7 +206,9 @@ export function sanitizeChatMessage(message: EventChatMessage): EventChatMessage
   if (!message.deletedAt) return message;
   return {
     ...message,
-    text: undefined
+    text: undefined,
+    cards: undefined,
+    offerVerification: undefined
   };
 }
 
@@ -259,6 +269,9 @@ export function suggestedVerificationQuestion(
         : `Do you have ${value} meal options, and can they be prepared without ${value.replace(/-free$/, "")}?`;
     }
     return `Can this restaurant accommodate ${value} meals?`;
+  }
+  if (requirementType === "opening-hours") {
+    return "Will you be open at our reservation time and stay open for at least an hour after we arrive?";
   }
   if (requirementType === "party-size") return `Can they seat a party of ${String(requirementValue)}?`;
   if (requirementType === "kid-friendly") return "Do they have high chairs?";

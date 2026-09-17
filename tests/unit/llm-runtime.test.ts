@@ -42,6 +42,59 @@ describe("LLM runtime", () => {
     expect(result.score).toBe(80);
   });
 
+  it("reports token usage from the model response", async () => {
+    const usage: Array<{ inputTokens: number; outputTokens: number }> = [];
+    const runtime = new LlmAgentRuntime({
+      apiKey: "test-key",
+      onUsage: (item) => usage.push(item),
+      fetch: (async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    candidateId: "rst_stk",
+                    participantId: "usr_gee",
+                    score: 80,
+                    label: "Good match",
+                    reasonCode: "MATCH",
+                    rejected: false,
+                    privateConflict: false
+                  })
+                }
+              }
+            ],
+            usage: { prompt_tokens: 1200, completion_tokens: 80 }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )) as typeof fetch
+    });
+    await runtime.completeStructured({
+      system: "test",
+      user: "test",
+      schema: CandidateEvaluationSchema
+    });
+    expect(usage).toEqual([
+      expect.objectContaining({ model: "gpt-4o-mini", inputTokens: 1200, outputTokens: 80 })
+    ]);
+  });
+
+  it("times out hung LLM requests", async () => {
+    const runtime = new LlmAgentRuntime({
+      apiKey: "test-key",
+      timeoutMs: 20,
+      fetch: (() => new Promise(() => undefined)) as typeof fetch
+    });
+    await expect(
+      runtime.completeStructured({
+        system: "test",
+        user: "test",
+        schema: CandidateEvaluationSchema
+      })
+    ).rejects.toThrow(/timed out after 20ms/);
+  });
+
   it("rejects model output that fails the schema", async () => {
     const runtime = new LlmAgentRuntime({
       apiKey: "test-key",

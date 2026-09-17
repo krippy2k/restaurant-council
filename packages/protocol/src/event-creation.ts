@@ -70,6 +70,10 @@ export const EventAmbiguitySchema = z.object({
   candidates: z.array(z.unknown()).optional()
 });
 
+export const EventRestaurantSearchPolicyIntentSchema = z.object({
+  minimumOpenAfterEventMinutes: z.number().int().min(15).max(360)
+});
+
 export const EventCreationIntentSchema = z.object({
   eventType: z.literal("restaurant").default("restaurant"),
   title: z.string().max(80).optional(),
@@ -82,6 +86,7 @@ export const EventCreationIntentSchema = z.object({
   price: PriceConstraintSchema.optional(),
   requirements: z.array(EventRequirementSchema).optional(),
   invitees: z.array(InviteeIntentSchema).optional(),
+  restaurantSearchPolicy: EventRestaurantSearchPolicyIntentSchema.optional(),
   missingFields: z.array(MissingFieldSchema).default([]),
   ambiguities: z.array(EventAmbiguitySchema).default([]),
   source: z.enum(["natural-language", "form"]).default("natural-language")
@@ -122,8 +127,10 @@ export type LlmEventIntentDraft = z.infer<typeof LlmEventIntentDraftSchema>;
 export const CreateEventCommandSchema = z.object({
   name: z.string().min(1).max(80),
   date: z.string().optional(),
+  timezone: z.string().min(1).max(80).optional(),
   locationLabel: z.string().min(1).max(200),
   radiusMiles: z.number().min(0.3).max(31),
+  restaurantSearchPolicy: EventRestaurantSearchPolicyIntentSchema.optional(),
   searchArea: z.object({
     displayName: z.string(),
     latitude: z.number(),

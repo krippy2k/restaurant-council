@@ -1,7 +1,8 @@
 import { Hono } from "hono";
-import { AppError, ErrorCodes, hashToken, isExpired, nowIso } from "@rc/shared";
+import { AppError, ErrorCodes, hashToken, isExpired } from "@rc/shared";
 import type { Env } from "../env.ts";
 import { requireUser, type AppVariables } from "./session.ts";
+import { acceptInvitation } from "../services/invitations.ts";
 
 export const inviteRoutes = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -42,27 +43,6 @@ inviteRoutes.post("/:token/accept", async (c) => {
   if (!invitation) {
     throw new AppError(ErrorCodes.INVITATION_INVALID, "Invitation not found", 404);
   }
-  if (invitation.acceptedAt) {
-    throw new AppError(ErrorCodes.INVITATION_USED, "Invitation already used", 400);
-  }
-  if (isExpired(invitation.expiresAt)) {
-    throw new AppError(ErrorCodes.INVITATION_EXPIRED, "Invitation expired", 400);
-  }
-  const now = nowIso();
-  await db.markInvitationAccepted(invitation.id, now);
-  await db.upsertMember({
-    eventId: invitation.eventId,
-    userId: identity.userId,
-    role: "member",
-    status: "joined",
-    joinedAt: now
-  });
-  await db.insertAudit({
-    eventId: invitation.eventId,
-    actorType: "user",
-    actorId: identity.userId,
-    action: "INVITATION_ACCEPTED",
-    decision: "ALLOW"
-  });
-  return c.json({ eventId: invitation.eventId });
+  const eventId = await acceptInvitation(db, invitation, identity.userId);
+  return c.json({ eventId });
 });

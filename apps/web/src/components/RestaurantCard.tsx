@@ -6,7 +6,9 @@ import {
   selectPrimaryPhoto
 } from "../restaurant-display";
 import { DietaryCompatibility } from "./DietaryCompatibility";
+import { HoursStatus } from "./HoursStatus";
 import { RestaurantContact } from "./RestaurantContact";
+import { RestaurantExtraDetails } from "./RestaurantExtraDetails";
 import { RestaurantPhoto } from "./RestaurantPhoto";
 import { RestaurantPrice } from "./RestaurantPrice";
 import { RestaurantRating } from "./RestaurantRating";
@@ -52,12 +54,14 @@ export function RestaurantCard({
           {restaurant.address ? ` · ${restaurant.address}` : ""}
         </p>
         <RestaurantContact restaurant={restaurant} compact />
+        <HoursStatus
+          assessment={restaurant.hoursAssessment}
+          timeZone={restaurant.openingHours?.timeZone}
+          compact
+        />
         <DietaryCompatibility restaurant={restaurant} compact />
         {children}
-        {photo?.attribution ? <p className="muted photo-attr">{photo.attribution}</p> : null}
-        {restaurant.providerAttribution ? (
-          <p className="muted photo-attr">{restaurant.providerAttribution}</p>
-        ) : null}
+        <RestaurantExtraDetails restaurant={restaurant} />
       </div>
     </article>
   );

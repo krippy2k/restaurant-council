@@ -106,17 +106,17 @@ eventIntentRoutes.post("/from-intent", async (c) => {
   const event = await persistNewEvent(c.get("db"), identity, {
     name: command.name,
     date: command.date,
+    timezone: command.timezone ?? parserContext(body).timezone,
     searchArea: command.searchArea,
-    locationLabel: command.locationLabel
+    locationLabel: command.locationLabel,
+    restaurantSearchPolicy: command.restaurantSearchPolicy
   });
   await applyCreatorPreferences(c.get("db"), identity, event, result.intent);
   const invitations = await sendIntentInvitations(
     c.get("db"),
     identity,
     event,
-    result.intent,
-    c.env.APP_ORIGIN,
-    c.env.ENVIRONMENT
+    result.intent
   );
   await c.get("db").insertAudit({
     eventId: event.id,

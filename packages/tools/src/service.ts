@@ -1,4 +1,4 @@
-import { AppError, ErrorCodes } from "@rc/shared";
+import { AppError, ErrorCodes, nowIso } from "@rc/shared";
 import type {
   Restaurant,
   RestaurantCache,
@@ -15,8 +15,10 @@ import {
 } from "./domain.ts";
 import { applyDeterministicFilters, broadenSearchRequest, rankBySoftConstraints } from "./filters.ts";
 import { searchCacheKey } from "./identity.ts";
-import { placeholderSvg } from "./enrichment.ts";
+import { mergePhotos, placeholderSvg } from "./enrichment.ts";
+import { hasStructuredHours, hoursAreFresh, HOURS_CACHE_TTL_MS } from "./hours/from-restaurant.ts";
 import { validateSearchRequest } from "./search-request.ts";
+import type { PlacesCacheKind } from "./places-billing.ts";
 
 export interface RestaurantSearchMetrics {
   restaurant_search_count: number;
@@ -57,7 +59,8 @@ export class RestaurantSearchService {
 
   constructor(
     private readonly provider: RestaurantProvider,
-    private readonly cache: RestaurantCache
+    private readonly cache: RestaurantCache,
+    private readonly options: { onPlacesCacheHit?: (kind: PlacesCacheKind) => void } = {}
   ) {}
 
   get providerName() {
@@ -74,6 +77,7 @@ export class RestaurantSearchService {
     if (cached) {
       this.metrics.restaurant_cache_hits += 1;
       this.metrics.last_result_count = cached.restaurants.length;
+      this.options.onPlacesCacheHit?.("search");
       return { ...cached, search: { ...cached.search, cacheHit: true } };
     }
     this.metrics.restaurant_cache_misses += 1;
@@ -91,14 +95,33 @@ export class RestaurantSearchService {
       request
     ).slice(0, request.limit);
 
+    const hydrated = [];
     for (const restaurant of filtered) {
-      await this.cache.putRestaurant(restaurant);
-      if (restaurant.rating != null) this.metrics.restaurant_rating_available += 1;
+      const existing =
+        (await this.cache.getRestaurant(restaurant.id)) ??
+        (await this.cache.getByProvider(restaurant.provider, restaurant.providerId));
+      const merged = existing
+        ? {
+            ...existing,
+            ...restaurant,
+            id: existing.id,
+            provider: existing.provider,
+            providerId: existing.providerId,
+            photos: mergePhotos(restaurant.photos, existing.photos),
+            reviews: restaurant.reviews?.length ? restaurant.reviews : existing.reviews,
+            openingHours: hasStructuredHours(existing) ? existing.openingHours : restaurant.openingHours,
+            detailsCoverage: existing.detailsCoverage,
+            detailsRetrievedAt: existing.detailsRetrievedAt
+          }
+        : restaurant;
+      await this.cache.putRestaurant(merged);
+      hydrated.push(merged);
+      if (merged.rating != null) this.metrics.restaurant_rating_available += 1;
       else this.metrics.restaurant_rating_missing += 1;
     }
 
     const result: RestaurantSearchResult = {
-      restaurants: filtered,
+      restaurants: hydrated,
       search: {
         provider: this.provider.name,
         resultCount: filtered.length,
@@ -126,27 +149,66 @@ export class RestaurantSearchService {
     return result;
   }
 
-  async getDetails(restaurantId: string): Promise<Restaurant> {
+  async getHours(restaurantId: string): Promise<{ restaurant: Restaurant; cacheHit: boolean }> {
+    const cached = await this.cache.getRestaurant(restaurantId);
+    if (!cached) {
+      throw new AppError(ErrorCodes.NOT_FOUND, "Restaurant not found", 404);
+    }
+    if (hasStructuredHours(cached) && hoursAreFresh(cached)) {
+      this.metrics.restaurant_cache_hits += 1;
+      this.options.onPlacesCacheHit?.("hours");
+      return { restaurant: cached, cacheHit: true };
+    }
+    if (cachedDetailsCover(cached, "hours")) {
+      this.metrics.restaurant_cache_hits += 1;
+      this.options.onPlacesCacheHit?.("hours");
+      return { restaurant: cached, cacheHit: true };
+    }
+    return { restaurant: await this.getDetails(restaurantId, { hoursOnly: true }), cacheHit: false };
+  }
+
+  async getDetails(restaurantId: string, options?: { hoursOnly?: boolean }): Promise<Restaurant> {
     this.metrics.restaurant_details_requests += 1;
     this.metrics.restaurant_details_enrichment_requests += 1;
     const cached = await this.cache.getRestaurant(restaurantId);
     if (!cached) {
       throw new AppError(ErrorCodes.NOT_FOUND, "Restaurant not found", 404);
     }
+    const requested = requestedCoverage(options?.hoursOnly);
+    if (cachedDetailsCover(cached, requested)) {
+      this.metrics.restaurant_cache_hits += 1;
+      this.options.onPlacesCacheHit?.(requested);
+      return cached;
+    }
+    if (options?.hoursOnly && hoursAreFresh(cached) && hasStructuredHours(cached)) {
+      this.metrics.restaurant_cache_hits += 1;
+      this.options.onPlacesCacheHit?.("hours");
+      return cached;
+    }
     try {
-      const fresh = await this.provider.getDetails(cached.providerId);
-      this.metrics.restaurant_review_requests += 1;
-      const merged: Restaurant = {
-        ...cached,
-        ...fresh,
-        id: cached.id,
-        provider: cached.provider,
-        providerId: cached.providerId,
-        location: cached.location,
-        photos:
-          (fresh.photos?.length ? fresh.photos : cached.photos)?.slice(0, FINALIST_PHOTO_LIMIT),
-        reviews: fresh.reviews?.length ? fresh.reviews : cached.reviews
-      };
+      const fresh = await this.provider.getDetails(cached.providerId, options);
+      if (!options?.hoursOnly) this.metrics.restaurant_review_requests += 1;
+      const merged: Restaurant = options?.hoursOnly
+        ? {
+            ...cached,
+            openingHours: fresh.openingHours ?? cached.openingHours,
+            detailsCoverage: inferredCoverage(cached) === "details" ? "details" : "hours",
+            detailsRetrievedAt:
+              inferredCoverage(cached) === "details" ? detailsRetrievedAt(cached) : nowIso()
+          }
+        : {
+            ...cached,
+            ...fresh,
+            id: cached.id,
+            provider: cached.provider,
+            providerId: cached.providerId,
+            location: cached.location,
+            photos: mergePhotos(fresh.photos, cached.photos, FINALIST_PHOTO_LIMIT),
+            reviews: fresh.reviews?.length ? fresh.reviews : cached.reviews,
+            openingHours: fresh.openingHours ?? cached.openingHours,
+            detailsCoverage: "details",
+            detailsRetrievedAt: nowIso()
+          };
       await this.cache.putRestaurant(merged);
       return merged;
     } catch (error) {
@@ -169,11 +231,10 @@ export class RestaurantSearchService {
       this.metrics.restaurant_photo_failures += 1;
       throw new AppError(ErrorCodes.NOT_FOUND, "Restaurant not found", 404);
     }
-    const photo = restaurant.photos?.find((item) => item.providerPhotoId === photoId);
-    if (!photo) {
-      this.metrics.restaurant_photo_failures += 1;
-      throw new AppError(ErrorCodes.NOT_FOUND, "Photo not found", 404);
-    }
+    const photo = restaurant.photos?.find((item) => item.providerPhotoId === photoId) ?? {
+      provider: restaurant.provider,
+      providerPhotoId: photoId
+    };
     if (this.provider.name === "mock" || !this.provider.getPhotoUrl) {
       return {
         kind: "bytes",
@@ -195,6 +256,31 @@ export class RestaurantSearchService {
       );
     }
   }
+}
+
+function requestedCoverage(hoursOnly?: boolean): "hours" | "details" {
+  return hoursOnly ? "hours" : "details";
+}
+
+function inferredCoverage(restaurant: Restaurant): "hours" | "details" | undefined {
+  if (restaurant.detailsCoverage) return restaurant.detailsCoverage;
+  if (restaurant.reviews?.length) return "details";
+  return undefined;
+}
+
+function detailsRetrievedAt(restaurant: Restaurant): string | undefined {
+  return restaurant.detailsRetrievedAt ?? restaurant.openingHours?.retrievedAt;
+}
+
+function cachedDetailsCover(restaurant: Restaurant, requested: "hours" | "details"): boolean {
+  const coverage = inferredCoverage(restaurant);
+  if (!coverage) return false;
+  if (requested === "details" && coverage !== "details") return false;
+  const retrievedAt = detailsRetrievedAt(restaurant);
+  if (!retrievedAt) return false;
+  const retrieved = Date.parse(retrievedAt);
+  if (!Number.isFinite(retrieved)) return false;
+  return Date.now() - retrieved < HOURS_CACHE_TTL_MS;
 }
 
 function dedupeRestaurants(restaurants: Restaurant[]): Restaurant[] {

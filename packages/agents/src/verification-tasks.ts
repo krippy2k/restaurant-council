@@ -1,5 +1,9 @@
 import type { CouncilConstraint, RestaurantCandidate, VerificationTask } from "@rc/protocol";
-import { dietaryConstraintsFromCouncil, suggestedVerificationQuestion } from "@rc/protocol";
+import {
+  dietaryConstraintsFromCouncil,
+  formatHoursClock,
+  suggestedVerificationQuestion
+} from "@rc/protocol";
 import { AppError, ErrorCodes, createId, nowIso } from "@rc/shared";
 
 export function verificationTasksFromCouncil(input: {
@@ -11,7 +15,6 @@ export function verificationTasksFromCouncil(input: {
   limit?: number;
 }): VerificationTask[] {
   const dietary = dietaryConstraintsFromCouncil(input.constraints);
-  if (dietary.length === 0) return [];
   const existingKeys = new Set(
     input.existing
       .filter((task) => task.status === "open" || task.status === "claimed")
@@ -22,17 +25,43 @@ export function verificationTasksFromCouncil(input: {
       const evals = input.evaluations.filter((item) => item.candidateId === candidate.id);
       if (evals.some((item) => item.rejected)) return null;
       const avg = evals.length ? evals.reduce((sum, item) => sum + item.score, 0) / evals.length : 0;
-      if (avg < 62) return null;
-      const uncertain = (candidate.dietaryAssessments ?? []).filter((item) => item.status === "uncertain");
-      if (uncertain.length === 0) return null;
-      return { candidate, avg, uncertain };
+      return { candidate, avg };
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item))
     .sort((a, b) => b.avg - a.avg);
 
   const tasks: VerificationTask[] = [];
   for (const item of scored) {
-    for (const assessment of item.uncertain) {
+    const hours = item.candidate.hoursAssessment;
+    if (hours?.status === "unknown") {
+      const key = `${item.candidate.id}:opening-hours:event-time`;
+      if (!existingKeys.has(key)) {
+        existingKeys.add(key);
+        const timeZone = item.candidate.openingHours?.timeZone ?? "UTC";
+        tasks.push({
+          id: createId("vtk"),
+          eventId: input.eventId,
+          restaurantId: item.candidate.id,
+          requirementType: "opening-hours",
+          requirementValue: "event-time",
+          question:
+            hours.eventDateTime && hours.requiredOpenUntil
+              ? `Will you be open at ${formatHoursClock(hours.eventDateTime, timeZone)} and remain open until at least ${formatHoursClock(hours.requiredOpenUntil, timeZone)}?`
+              : suggestedVerificationQuestion("opening-hours", "event-time"),
+          status: "open",
+          createdBy: { type: "system" },
+          createdAt: nowIso()
+        });
+        console.info(JSON.stringify({ metric: "restaurant_hours_human_verification_requested" }));
+        if (input.limit != null && tasks.length >= input.limit) return tasks;
+      }
+    }
+
+    if (dietary.length === 0) continue;
+    const uncertain = (item.candidate.dietaryAssessments ?? []).filter(
+      (assessment) => assessment.status === "uncertain" || assessment.status === "conflicting"
+    );
+    for (const assessment of uncertain) {
       const constraint = dietary.find((need) => need.requirement === assessment.requirement);
       const key = `${item.candidate.id}:dietary:${assessment.requirement}`;
       if (existingKeys.has(key)) continue;
@@ -52,7 +81,7 @@ export function verificationTasksFromCouncil(input: {
         createdBy: { type: "system" },
         createdAt: nowIso()
       });
-      if (tasks.length >= (input.limit ?? 3)) return tasks;
+      if (input.limit != null && tasks.length >= input.limit) return tasks;
     }
   }
   return tasks;

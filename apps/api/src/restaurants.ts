@@ -12,6 +12,8 @@ import {
   RestaurantSearchService,
   type DietaryAnalyzer,
   type LocationResolver,
+  type PlacesBillableRequest,
+  type PlacesCacheKind,
   type RestaurantSearchTool
 } from "@rc/tools";
 import type { Database } from "./db/database.ts";
@@ -25,13 +27,24 @@ export function restaurantProviderName(env: Env): "google" | "mock" {
   return env.GOOGLE_PLACES_API_KEY ? "google" : "mock";
 }
 
-export function createRestaurantSearch(env: Env, db?: Database): RestaurantSearchTool {
+export function createRestaurantSearch(
+  env: Env,
+  db?: Database,
+  options?: {
+    onPlacesRequest?: (request: PlacesBillableRequest) => void;
+    onPlacesCacheHit?: (kind: PlacesCacheKind) => void;
+  }
+): RestaurantSearchTool {
   const cache = db ? new D1RestaurantCache(db) : new MemoryRestaurantCache();
   const provider =
     restaurantProviderName(env) === "google" && env.GOOGLE_PLACES_API_KEY
-      ? new GooglePlacesRestaurantProvider(env.GOOGLE_PLACES_API_KEY)
+      ? new GooglePlacesRestaurantProvider(env.GOOGLE_PLACES_API_KEY, fetch, {
+          onBillableRequest: options?.onPlacesRequest
+        })
       : new MockRestaurantProvider();
-  return new AuthorizedRestaurantSearch(new RestaurantSearchService(provider, cache));
+  return new AuthorizedRestaurantSearch(
+    new RestaurantSearchService(provider, cache, { onPlacesCacheHit: options?.onPlacesCacheHit })
+  );
 }
 
 export function createLocationResolver(env: Env): LocationResolver {

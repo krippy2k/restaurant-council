@@ -7,10 +7,11 @@ import {
   type EventCreationResult,
   type EventSearchArea
 } from "../api";
+import { rememberDevAccounts } from "../dev-accounts";
 
 const RADIUS_MILES = [2, 5, 10, 15];
 const EXAMPLE =
-  "Find somewhere kid friendly within 10 miles of Bamford Park Saturday at 3pm.";
+  "Find somewhere kid friendly within 10 miles of Bamford Park Saturday at 3pm. Invite sarah@example.com.";
 
 function timezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
@@ -110,6 +111,9 @@ export function NewEventPage() {
     setError(undefined);
     try {
       const data = await api.createEventFromIntent(result.intent, timezone());
+      rememberDevAccounts(
+        (data.invitations ?? []).map((invitation) => ({ email: invitation.email }))
+      );
       navigate(`/events/${data.event.id}`);
     } catch (err) {
       setError(err);
@@ -165,6 +169,7 @@ export function NewEventPage() {
       const data = await api.createEvent({
         name: form.name,
         date: form.date ? new Date(form.date).toISOString() : undefined,
+        timezone: timezone(),
         locationLabel: area.displayName,
         searchArea: area,
         radiusMiles: form.radiusMiles

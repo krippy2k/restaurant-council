@@ -6,6 +6,7 @@ import { EventPage } from "./pages/EventPage";
 import { HomePage } from "./pages/HomePage";
 import { JoinPage } from "./pages/JoinPage";
 import { NewEventPage } from "./pages/NewEventPage";
+import { DevUserSwitcher } from "./components/DevUserSwitcher";
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -44,7 +45,7 @@ export function App() {
         <div className="nav-row">
           {user ? (
             <>
-              <span className="muted">{user.displayName ?? user.email}</span>
+              <DevUserSwitcher user={user} onAuth={setUser} />
               <Link className="btn secondary" to="/events/new">
                 New event
               </Link>

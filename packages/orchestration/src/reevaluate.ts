@@ -8,6 +8,7 @@ import type {
 } from "@rc/protocol";
 import { createId, nowIso } from "@rc/shared";
 import { assessDietaryEvidence, makeEvidence } from "@rc/tools";
+import { applyHumanHoursEvidence, applyHoursVeto } from "./hours.ts";
 import type { AgentRuntime } from "@rc/agents";
 import type { CouncilConstraint } from "@rc/protocol";
 import { mediaByRestaurantId, mergeRestaurantMedia } from "./candidate-media.ts";
@@ -17,16 +18,24 @@ import {
   negotiatorProgress,
   personalAgentProgress
 } from "./progress.ts";
+import type { CouncilSpendTracker } from "./spend.ts";
 
 export function mergeHumanEvidenceIntoCandidates(
   snapshot: CouncilSnapshot,
   evidence: HumanEvidence[]
 ): CouncilSnapshot {
   const candidates = snapshot.candidates.map((candidate) => {
+    const hoursEvidence = evidence.filter(
+      (item) => item.restaurantId === candidate.id && item.requirementType === "opening-hours"
+    );
+    const latestHours = hoursEvidence.at(-1);
+    const withHours = latestHours
+      ? applyHumanHoursEvidence(candidate, latestHours.result, latestHours.verifiedAt)
+      : candidate;
     const mine = evidence.filter(
       (item) => item.restaurantId === candidate.id && item.requirementType === "dietary"
     );
-    if (!mine.length) return candidate;
+    if (!mine.length) return withHours;
     const assessments = (candidate.dietaryAssessments ?? []).map((assessment) => {
       const extra = mine.filter((item) => String(item.requirementValue ?? "") === assessment.requirement);
       if (!extra.length) return assessment;
@@ -49,7 +58,7 @@ export function mergeHumanEvidenceIntoCandidates(
         evidenceRequirement: "normal"
       });
     });
-    return { ...candidate, dietaryAssessments: assessments };
+    return { ...withHours, dietaryAssessments: assessments };
   });
   return { ...snapshot, candidates };
 }
@@ -60,6 +69,7 @@ export async function reevaluateCouncil(input: {
   evidence: HumanEvidence[];
   constraints?: CouncilConstraint[];
   runtime?: AgentRuntime;
+  spend?: CouncilSpendTracker;
   reportProgress?: (progress: CouncilProgress, snapshot: CouncilSnapshot) => Promise<void>;
 }): Promise<CouncilSnapshot> {
   const withEvidence = mergeHumanEvidenceIntoCandidates(input.snapshot, input.evidence);
@@ -76,7 +86,8 @@ export async function reevaluateCouncil(input: {
   };
   const reporter = createProgressReporter(working, {
     emit: async () => undefined,
-    reportProgress: input.reportProgress
+    reportProgress: input.reportProgress,
+    spend: input.spend
   });
   const runtime = instrumentRuntime(input.runtime, reporter) ?? input.runtime;
   const evaluations = [];
@@ -103,6 +114,7 @@ export async function reevaluateCouncil(input: {
       )
     );
   }
+  applyHoursVeto(evaluations, candidates);
   await reporter.begin({
     phase: "NEGOTIATING",
     step: "Updating recommendations",

@@ -13,6 +13,9 @@ Never invent latitude, longitude, or provider place IDs.
 Never copy private explanations, finances, medical stories, or "don't tell" language into title or description.
 Dietary needs are objects {requirement, strength, evidenceRequirement}.
 Kid friendly / family friendly becomes requirements: [{type:"kid-friendly", strength:"required"}].
+Times such as "around 1pm", "around 7", or "at 3" are arrival times, never a price. Only set price when the user mentions money, $, dollars, cheap/inexpensive, or a per-person budget.
+Extract invitees from email addresses in the text as invitees: [{email, displayName?}]. Never invent emails that are not in the text.
+If the user asks for the restaurant to stay open a duration after arrival, set restaurantSearchPolicy.minimumOpenAfterEventMinutes (two hours → 120). Default is 60 when omitted.
 Return JSON matching the schema. relativeDate may be "Saturday" or "tomorrow" if the user used those words.`;
 
 export class LlmEventIntentParser implements EventIntentParser {

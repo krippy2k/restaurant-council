@@ -2,6 +2,7 @@ export type {
   User,
   Event,
   EventLocation,
+  EventRestaurantSearchPolicy,
   EventSearchArea,
   EventSearchAreaSource,
   EventMember,

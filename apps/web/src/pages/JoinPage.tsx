@@ -31,9 +31,10 @@ export function JoinPage({
     try {
       let current = user;
       if (!current) {
-        const signed = await api.signin(email, displayName);
-        onAuth(signed.user);
-        current = signed.user;
+      const signed = await api.signin(email, displayName);
+      if (!signed.user) throw new Error("Sign-in failed");
+      onAuth(signed.user);
+      current = signed.user;
       }
       const accepted = await api.acceptInvite(token);
       navigate(`/events/${accepted.eventId}`);

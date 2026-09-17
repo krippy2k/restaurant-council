@@ -32,6 +32,8 @@ export function restaurantToCandidate(
     ),
     address: restaurant.address,
     hours: restaurant.openingHours?.weekdayText?.[0],
+    hoursWeekdayText: restaurant.openingHours?.weekdayText,
+    openingHours: restaurant.openingHours,
     website: restaurant.website,
     phone: restaurant.phone,
     email: restaurant.email,

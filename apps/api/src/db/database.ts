@@ -10,6 +10,7 @@ import type { CouncilConstraint, CouncilSnapshot } from "@rc/protocol";
 import type { Restaurant, RestaurantProviderType, RestaurantSearchResult } from "@rc/tools";
 import { createId, nowIso } from "@rc/shared";
 import { CollaborationStore } from "./collaboration.ts";
+import { ResearchStore } from "./research.ts";
 import {
   mapAudit,
   mapConstraint,
@@ -24,9 +25,11 @@ import {
 
 export class Database {
   readonly collab: CollaborationStore;
+  readonly research: ResearchStore;
 
   constructor(private readonly db: D1Database) {
     this.collab = new CollaborationStore(db);
+    this.research = new ResearchStore(db);
   }
 
   async getUser(id: string): Promise<User | null> {
@@ -40,6 +43,64 @@ export class Database {
       .bind(email.toLowerCase())
       .first();
     return row ? mapUser(row as Record<string, unknown>) : null;
+  }
+
+  async updateUserDisplayName(userId: string, displayName: string): Promise<User | null> {
+    await this.db
+      .prepare("UPDATE users SET display_name = ? WHERE id = ?")
+      .bind(displayName, userId)
+      .run();
+    return this.getUser(userId);
+  }
+
+  async getInvitation(id: string): Promise<Invitation | null> {
+    const row = await this.db.prepare("SELECT * FROM invitations WHERE id = ?").bind(id).first();
+    return row ? mapInvitation(row as Record<string, unknown>) : null;
+  }
+
+  async getInvitationByEventEmail(eventId: string, email: string): Promise<Invitation | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT * FROM invitations
+         WHERE event_id = ? AND lower(destination) = ?
+         ORDER BY created_at DESC`
+      )
+      .bind(eventId, email.toLowerCase())
+      .first();
+    return row ? mapInvitation(row as Record<string, unknown>) : null;
+  }
+
+  async listInvitationsSentBy(userId: string): Promise<Invitation[]> {
+    const result = await this.db
+      .prepare("SELECT * FROM invitations WHERE invited_by = ? ORDER BY created_at DESC")
+      .bind(userId)
+      .all();
+    return (result.results as Record<string, unknown>[]).map(mapInvitation);
+  }
+
+  async listPendingInvitationsByEmail(email: string): Promise<Invitation[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT * FROM invitations
+         WHERE lower(destination) = ? AND accepted_at IS NULL AND expires_at > ?
+         ORDER BY created_at DESC`
+      )
+      .bind(email.toLowerCase(), nowIso())
+      .all();
+    return (result.results as Record<string, unknown>[]).map(mapInvitation);
+  }
+
+  async listEventMemberUsers(userId: string): Promise<User[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT DISTINCT u.* FROM users u
+         JOIN event_members mine ON mine.user_id = ?
+         JOIN event_members other ON other.event_id = mine.event_id
+         WHERE u.id = other.user_id`
+      )
+      .bind(userId)
+      .all();
+    return (result.results as Record<string, unknown>[]).map(mapUser);
   }
 
   async createUser(input: { displayName?: string; email?: string }): Promise<User> {
@@ -87,21 +148,23 @@ export class Database {
     await this.db
       .prepare(
         `INSERT INTO events (
-          id, owner_id, name, date, location_label, latitude, longitude, radius_meters,
-          location_source, location_place_id, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          id, owner_id, name, date, timezone, location_label, latitude, longitude, radius_meters,
+          location_source, location_place_id, restaurant_search_policy, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         event.id,
         event.ownerId,
         event.name,
         event.date ?? null,
+        event.timezone ?? null,
         event.searchArea?.displayName ?? event.locationLabel ?? null,
         event.searchArea?.latitude ?? event.location?.latitude ?? null,
         event.searchArea?.longitude ?? event.location?.longitude ?? null,
         event.searchArea?.radiusMeters ?? null,
         event.searchArea?.source ?? null,
         event.searchArea?.providerPlaceId ?? null,
+        event.restaurantSearchPolicy ? JSON.stringify(event.restaurantSearchPolicy) : null,
         event.status,
         event.createdAt,
         event.updatedAt
@@ -112,19 +175,21 @@ export class Database {
   async updateEvent(event: Event): Promise<void> {
     await this.db
       .prepare(
-        `UPDATE events SET name = ?, date = ?, location_label = ?, latitude = ?, longitude = ?,
-         radius_meters = ?, location_source = ?, location_place_id = ?,
+        `UPDATE events SET name = ?, date = ?, timezone = ?, location_label = ?, latitude = ?, longitude = ?,
+         radius_meters = ?, location_source = ?, location_place_id = ?, restaurant_search_policy = ?,
          status = ?, updated_at = ? WHERE id = ?`
       )
       .bind(
         event.name,
         event.date ?? null,
+        event.timezone ?? null,
         event.searchArea?.displayName ?? event.locationLabel ?? null,
         event.searchArea?.latitude ?? event.location?.latitude ?? null,
         event.searchArea?.longitude ?? event.location?.longitude ?? null,
         event.searchArea?.radiusMeters ?? null,
         event.searchArea?.source ?? null,
         event.searchArea?.providerPlaceId ?? null,
+        event.restaurantSearchPolicy ? JSON.stringify(event.restaurantSearchPolicy) : null,
         event.status,
         event.updatedAt,
         event.id
@@ -484,10 +549,12 @@ export class Database {
 
   async getRestaurantReference(id: string): Promise<Restaurant | null> {
     const row = await this.db
-      .prepare("SELECT cached_data FROM restaurant_references WHERE id = ?")
+      .prepare(
+        "SELECT id, provider, provider_restaurant_id, name, latitude, longitude, cached_data FROM restaurant_references WHERE id = ?"
+      )
       .bind(id)
-      .first<{ cached_data: string | null }>();
-    return row?.cached_data ? (JSON.parse(row.cached_data) as Restaurant) : null;
+      .first<RestaurantReferenceRow>();
+    return restaurantFromReferenceRow(row);
   }
 
   async getRestaurantReferenceByProvider(
@@ -496,11 +563,23 @@ export class Database {
   ): Promise<Restaurant | null> {
     const row = await this.db
       .prepare(
-        "SELECT cached_data FROM restaurant_references WHERE provider = ? AND provider_restaurant_id = ?"
+        "SELECT id, provider, provider_restaurant_id, name, latitude, longitude, cached_data FROM restaurant_references WHERE provider = ? AND provider_restaurant_id = ?"
       )
       .bind(provider, providerId)
-      .first<{ cached_data: string | null }>();
-    return row?.cached_data ? (JSON.parse(row.cached_data) as Restaurant) : null;
+      .first<RestaurantReferenceRow>();
+    return restaurantFromReferenceRow(row);
+  }
+
+  async clearPlacesCache(): Promise<void> {
+    const at = nowIso();
+    await this.db.batch([
+      this.db.prepare("DELETE FROM restaurant_search_cache"),
+      this.db.prepare(
+        "UPDATE restaurant_references SET cached_data = NULL, cached_at = NULL, updated_at = ?"
+      ).bind(at),
+      this.db.prepare("DELETE FROM dietary_evidence"),
+      this.db.prepare("DELETE FROM dietary_assessments")
+    ]);
   }
 
   async upsertRestaurantReference(restaurant: Restaurant, at: string): Promise<void> {
@@ -712,4 +791,27 @@ export class Database {
         .run();
     }
   }
+}
+
+interface RestaurantReferenceRow {
+  id: string;
+  provider: string;
+  provider_restaurant_id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  cached_data: string | null;
+}
+
+function restaurantFromReferenceRow(row: RestaurantReferenceRow | null): Restaurant | null {
+  if (!row) return null;
+  if (row.cached_data) return JSON.parse(row.cached_data) as Restaurant;
+  return {
+    id: row.id,
+    provider: row.provider as RestaurantProviderType,
+    providerId: row.provider_restaurant_id,
+    name: row.name,
+    location: { latitude: row.latitude, longitude: row.longitude },
+    cuisines: []
+  };
 }

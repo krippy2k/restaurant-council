@@ -2,13 +2,13 @@ import { Hono } from "hono";
 import { assertAuthorized, createUserPrincipal } from "@rc/auth";
 import { sanitizePreferenceForViewer, textRequestsSecrecy, type Event, type EventSearchArea } from "@rc/domain";
 import { interpretPreferenceNotes } from "@rc/agents";
-import { AppError, ErrorCodes, addHours, createId, hashToken, nowIso, randomToken } from "@rc/shared";
+import { AppError, ErrorCodes, createId, nowIso } from "@rc/shared";
 import { clampRadiusMeters, milesToMeters } from "@rc/tools";
 import type { Env } from "../env.ts";
 import { assertEventRead, loadEventResource } from "./event-access.ts";
 import { requireUser, type AppVariables } from "./session.ts";
 import { persistNewEvent } from "./event-create.ts";
-import { DevInvitationSender } from "../services/invitations.ts";
+import { createEmailInvitation, publicInvitation } from "../services/invitations.ts";
 import { runtimeFromEnv } from "../ai.ts";
 
 const CITY_PRESETS: Record<string, { latitude: number; longitude: number }> = {
@@ -62,6 +62,7 @@ eventRoutes.post("/", async (c) => {
   const body = await c.req.json<{
     name?: string;
     date?: string;
+    timezone?: string;
     locationLabel?: string;
     latitude?: number;
     longitude?: number;
@@ -77,6 +78,7 @@ eventRoutes.post("/", async (c) => {
   const event = await persistNewEvent(c.get("db"), identity, {
     name,
     date: body.date,
+    timezone: body.timezone,
     searchArea,
     locationLabel: body.locationLabel
   });
@@ -112,6 +114,7 @@ eventRoutes.patch("/:eventId", async (c) => {
   const body = await c.req.json<{
     name?: string;
     date?: string;
+    timezone?: string;
     locationLabel?: string;
     latitude?: number;
     longitude?: number;
@@ -124,6 +127,7 @@ eventRoutes.patch("/:eventId", async (c) => {
     ...loaded.event,
     name: body.name?.trim() || loaded.event.name,
     date: body.date ?? loaded.event.date,
+    timezone: body.timezone ?? loaded.event.timezone,
     locationLabel: searchArea?.displayName ?? body.locationLabel ?? loaded.event.locationLabel,
     location: searchArea
       ? { latitude: searchArea.latitude, longitude: searchArea.longitude }
@@ -165,14 +169,7 @@ eventRoutes.get("/:eventId/invitations", async (c) => {
   });
   const invitations = await c.get("db").listInvitations(loaded.event.id);
   return c.json({
-    invitations: invitations.map((invitation) => ({
-      id: invitation.id,
-      type: invitation.type,
-      destination: invitation.destination,
-      expiresAt: invitation.expiresAt,
-      acceptedAt: invitation.acceptedAt,
-      createdAt: invitation.createdAt
-    }))
+    invitations: invitations.map(publicInvitation)
   });
 });
 
@@ -194,49 +191,12 @@ eventRoutes.post("/:eventId/invitations", async (c) => {
     throw new AppError(ErrorCodes.RATE_LIMITED, "Too many invitations", 429);
   }
   const body = await c.req.json<{ email?: string }>();
-  const email = body.email?.trim().toLowerCase();
-  if (!email || !email.includes("@")) {
-    throw new AppError(ErrorCodes.VALIDATION, "Invitation email is required", 400);
-  }
-  const token = randomToken(32);
-  const invitation = {
-    id: createId("inv"),
-    eventId: loaded.event.id,
-    invitedBy: identity.userId,
-    type: "email" as const,
-    destination: email,
-    tokenHash: await hashToken(token),
-    expiresAt: addHours(nowIso(), 24 * 7),
-    createdAt: nowIso()
-  };
-  await db.createInvitation(invitation);
-  const url = `${c.env.APP_ORIGIN}/join?invite=${token}`;
-  const sender = new DevInvitationSender();
-  const inviter = await db.getUser(identity.userId);
-  await sender.sendEmail({
-    destination: email,
-    eventName: loaded.event.name,
-    inviterName: inviter?.displayName ?? "A host",
-    url
+  const invitation = await createEmailInvitation(db, {
+    identity,
+    event: loaded.event,
+    email: body.email ?? ""
   });
-  await db.insertAudit({
-    eventId: loaded.event.id,
-    actorType: "user",
-    actorId: identity.userId,
-    action: "INVITATION_CREATED",
-    resource: "email",
-    decision: "ALLOW"
-  });
-  return c.json({
-    invitation: {
-      id: invitation.id,
-      type: invitation.type,
-      destination: invitation.destination,
-      expiresAt: invitation.expiresAt,
-      createdAt: invitation.createdAt
-    },
-    devInviteUrl: c.env.ENVIRONMENT === "development" ? url : undefined
-  });
+  return c.json({ invitation: invitation ? publicInvitation(invitation) : undefined });
 });
 
 function preferenceVisibilityFromNotes(

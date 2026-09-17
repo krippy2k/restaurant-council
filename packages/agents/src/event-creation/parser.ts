@@ -1,5 +1,10 @@
-import type { EventCreationIntent, EventParserContext, LlmEventIntentDraft } from "@rc/protocol";
-import { clampMiles, intentFromText, stripPrivateCopy } from "./extract.ts";
+import type {
+  EventCreationIntent,
+  EventParserContext,
+  InviteeIntent,
+  LlmEventIntentDraft
+} from "@rc/protocol";
+import { clampMiles, intentFromText, stripPrivateCopy, textHasPriceLanguage } from "./extract.ts";
 import { resolveRelativeDate } from "./dates.ts";
 
 export interface EventIntentParser {
@@ -33,7 +38,8 @@ export function mergeIntent(
     dietaryRequirements: patch.dietaryRequirements ?? current.dietaryRequirements,
     price: patch.price ?? current.price,
     requirements: patch.requirements ?? current.requirements,
-    invitees: patch.invitees ?? current.invitees,
+    invitees: mergeInvitees(current.invitees, patch.invitees),
+    restaurantSearchPolicy: patch.restaurantSearchPolicy ?? current.restaurantSearchPolicy,
     missingFields: [],
     ambiguities: [],
     source: current.source
@@ -58,9 +64,10 @@ export function applyDraft(
     location: groundedLocation(text, deterministic, draft),
     cuisines: deterministic.cuisines ?? draft.cuisines,
     dietaryRequirements: deterministic.dietaryRequirements ?? draft.dietaryRequirements,
-    price: deterministic.price ?? draft.price,
+    price: deterministic.price ?? (textHasPriceLanguage(text) ? draft.price : undefined),
     requirements: deterministic.requirements ?? draft.requirements,
-    invitees: deterministic.invitees ?? draft.invitees,
+    invitees: groundedInvitees(text, deterministic.invitees, draft.invitees),
+    restaurantSearchPolicy: deterministic.restaurantSearchPolicy ?? draft.restaurantSearchPolicy,
     missingFields: [],
     ambiguities: [],
     source: "natural-language"
@@ -96,4 +103,36 @@ function queryGroundedInText(query: string, text: string): boolean {
   if (haystack.includes(needle)) return true;
   const token = needle.split(/[,\s]+/).find((part) => part.length > 3);
   return Boolean(token && haystack.includes(token));
+}
+
+export function mergeInvitees(
+  current?: InviteeIntent[],
+  patch?: InviteeIntent[]
+): InviteeIntent[] | undefined {
+  if (!patch?.length) return current;
+  const invitees = new Map<string, InviteeIntent>();
+  for (const item of [...(current ?? []), ...patch]) {
+    const email = item.email?.trim().toLowerCase().replace(/[.,]+$/g, "");
+    if (!email || !email.includes("@")) continue;
+    const prior = invitees.get(email);
+    invitees.set(email, {
+      email,
+      displayName: item.displayName?.trim() || prior?.displayName,
+      phone: item.phone ?? prior?.phone
+    });
+  }
+  return invitees.size ? [...invitees.values()] : current;
+}
+
+function groundedInvitees(
+  text: string,
+  current?: InviteeIntent[],
+  draft?: InviteeIntent[]
+): InviteeIntent[] | undefined {
+  const haystack = text.toLowerCase();
+  const grounded = (draft ?? []).filter((item) => {
+    const email = item.email?.trim().toLowerCase();
+    return Boolean(email && haystack.includes(email));
+  });
+  return mergeInvitees(current, grounded);
 }

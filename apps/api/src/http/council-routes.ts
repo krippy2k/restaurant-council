@@ -60,6 +60,21 @@ councilRoutes.post("/:eventId/council/start", async (c) => {
   return c.json(body, response.status as never);
 });
 
+councilRoutes.post("/:eventId/council/cache/clear", async (c) => {
+  const identity = requireUser(c);
+  const loaded = await loadEventResource(c.get("db"), c.req.param("eventId"));
+  const decision = authorize({
+    principal: createUserPrincipal(identity.userId),
+    action: "event.start_council",
+    resource: loaded.resource
+  });
+  if (!decision.allowed) {
+    throw new AppError(ErrorCodes.FORBIDDEN, decision.reason, 403);
+  }
+  await c.get("db").clearPlacesCache();
+  return c.json({ ok: true });
+});
+
 councilRoutes.get("/:eventId/council/ws", async (c) => {
   const identity = requireUser(c);
   await assertEventRead(c.get("db"), identity.userId, c.req.param("eventId"));

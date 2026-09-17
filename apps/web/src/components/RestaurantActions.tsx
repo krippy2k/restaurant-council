@@ -135,6 +135,7 @@ export function RestaurantActions({
       {verifyOpen && task ? (
         <VerifyDialog
           question={task.question}
+          requirementType={task.requirementType}
           phone={phone}
           email={email}
           busy={busy}
@@ -220,6 +221,7 @@ function RejectDialog({
 
 function VerifyDialog({
   question,
+  requirementType,
   phone,
   email,
   busy,
@@ -227,6 +229,7 @@ function VerifyDialog({
   onSubmit
 }: {
   question: string;
+  requirementType?: string;
   phone?: string;
   email?: string;
   busy: boolean;
@@ -260,8 +263,16 @@ function VerifyDialog({
         <label className="field">
           <span>Result</span>
           <select value={result} onChange={(e) => setResult(e.target.value as CompleteVerificationInput["result"])}>
-            <option value="supports">They can accommodate it</option>
-            <option value="contradicts">They cannot accommodate it</option>
+            <option value="supports">
+              {requirementType === "opening-hours"
+                ? "They will be open for the event"
+                : "They can accommodate it"}
+            </option>
+            <option value="contradicts">
+              {requirementType === "opening-hours"
+                ? "They are closed or close too soon"
+                : "They cannot accommodate it"}
+            </option>
             <option value="uncertain">Still unclear</option>
           </select>
         </label>

@@ -43,6 +43,23 @@ export interface RestaurantView {
   photos?: RestaurantPhoto[];
   reviews?: RestaurantReview[];
   providerAttribution?: string;
+  hours?: string;
+  hoursWeekdayText?: string[];
+  openingHours?: {
+    timeZone?: string;
+    weekdayText?: string[];
+    sourceType?: "current" | "regular" | "human";
+  };
+  hoursAssessment?: {
+    restaurantId: string;
+    status: "suitable" | "closes-too-soon" | "closed" | "unknown";
+    eventDateTime: string;
+    minimumOpenAfterEventMinutes: number;
+    requiredOpenUntil: string;
+    applicablePeriod?: { opensAt: string; closesAt?: string };
+    source?: { provider: string; retrievedAt: string; type?: "current" | "regular" | "human" };
+    weekdayText?: string[];
+  };
   dietaryAssessments?: Array<{
     restaurantId: string;
     requirement: string;

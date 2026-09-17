@@ -1,5 +1,5 @@
 import type { RestaurantPhoto, RestaurantPhotoOptions } from "./domain.ts";
-import { PROVIDER_PHOTO_MAX_PX } from "./domain.ts";
+import { FINALIST_PHOTO_LIMIT, PROVIDER_PHOTO_MAX_PX } from "./domain.ts";
 
 export function normalizeRating(value: unknown): number | undefined {
   const rating = typeof value === "number" ? value : Number(value);
@@ -39,6 +39,24 @@ export function limitPhotos(
 ): RestaurantPhoto[] | undefined {
   if (!photos?.length) return undefined;
   return photos.slice(0, Math.max(0, limit));
+}
+
+/** Keep every known photo id so a thinner search/details copy cannot blank the card. */
+export function mergePhotos(
+  primary: RestaurantPhoto[] | undefined,
+  fallback?: RestaurantPhoto[],
+  limit = FINALIST_PHOTO_LIMIT
+): RestaurantPhoto[] | undefined {
+  const seen = new Set<string>();
+  const photos: RestaurantPhoto[] = [];
+  for (const photo of [...(primary ?? []), ...(fallback ?? [])]) {
+    const id = photo.providerPhotoId?.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    photos.push(photo);
+    if (photos.length >= Math.max(1, limit)) break;
+  }
+  return photos.length ? photos : undefined;
 }
 
 export function reputationScore(rating?: number, reviewCount?: number): number {

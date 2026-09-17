@@ -28,6 +28,7 @@ import { newAction, newChatMessage } from "../db/collaboration.ts";
 import { loadEventResource } from "./event-access.ts";
 import { requireUser, type AppContext, type AppVariables } from "./session.ts";
 import { collabMetric, notifyCouncil, requestReevaluate } from "./collab-notify.ts";
+import { createEventResearchRegistry, executeAgentInvocation, scheduleAgent, startAgentFromChat } from "../services/agent-chat.ts";
 
 export const collaborationRoutes = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -88,16 +89,41 @@ collaborationRoutes.post("/:eventId/chat", async (c) => {
   if (!allowed) throw new AppError(ErrorCodes.RATE_LIMITED, "Too many chat messages", 429);
   const body = PostChatInputSchema.parse(await c.req.json());
   const eventId = c.req.param("eventId");
+  const registry = createEventResearchRegistry(c.env, db, eventId);
+  const detectedMention = registry.detect(body.text);
+  if (detectedMention) {
+    const allowedAgent = await db.consumeRateLimit(`agent:${identity.userId}`, 20, 60 * 60 * 1000);
+    if (!allowedAgent) throw new AppError(ErrorCodes.RATE_LIMITED, "Too many agent requests", 429);
+  }
   const message = newChatMessage({
     eventId,
     sender: { type: "user", userId: identity.userId },
-    messageType: "text",
+    messageType: detectedMention ? "agent-request" : "text",
     text: body.text,
     relatedRestaurantId: body.relatedRestaurantId
   });
   await db.collab.insertChat(message);
   collabMetric("event_chat_messages_sent");
-  const detected = detectPreferenceFromChat({
+  let invocation;
+  let progress;
+  if (detectedMention) {
+    const started = await startAgentFromChat({
+      env: c.env,
+      db,
+      eventId,
+      userId: identity.userId,
+      source: message,
+      query: detectedMention.mention.query,
+      agentId: detectedMention.agent.id
+    });
+    invocation = started.invocation;
+    progress = started.progress;
+    collabMetric("agent_invocations_created");
+    scheduleAgent(c, executeAgentInvocation({ env: c.env, db, eventId, invocationId: invocation.id }));
+  }
+  const detected = detectedMention
+    ? undefined
+    : detectPreferenceFromChat({
     eventId,
     userId: identity.userId,
     sourceMessageId: message.id,
@@ -125,7 +151,83 @@ collaborationRoutes.post("/:eventId/chat", async (c) => {
     }
   }
   await notifyCouncil(c.env, eventId, { type: "chat", message });
-  return c.json({ message, prompt }, 201);
+  if (progress) await notifyCouncil(c.env, eventId, { type: "chat", message: progress });
+  return c.json({ message, prompt, invocation }, 201);
+});
+
+collaborationRoutes.get("/:eventId/agents/invocations/:invocationId", async (c) => {
+  const { identity, db } = await memberContext(c, "chat.read");
+  const invocation = await db.research.getInvocation(c.req.param("eventId"), c.req.param("invocationId"));
+  if (!invocation) throw new AppError(ErrorCodes.NOT_FOUND, "Agent invocation not found", 404);
+  if (invocation.visibility === "private" && invocation.userId !== identity.userId) {
+    throw new AppError(ErrorCodes.FORBIDDEN, "Private research is not visible", 403);
+  }
+  return c.json({ invocation });
+});
+
+collaborationRoutes.post("/:eventId/agents/invocations/:invocationId/retry", async (c) => {
+  const { identity, db } = await memberContext(c, "chat.write");
+  const invocation = await db.research.getInvocation(c.req.param("eventId"), c.req.param("invocationId"));
+  if (!invocation) throw new AppError(ErrorCodes.NOT_FOUND, "Agent invocation not found", 404);
+  if (invocation.userId !== identity.userId) {
+    throw new AppError(ErrorCodes.FORBIDDEN, "You can only retry your own research", 403);
+  }
+  if (invocation.status !== "failed") {
+    throw new AppError(ErrorCodes.CONFLICT, "Only failed research can be retried", 409);
+  }
+  const allowedAgent = await db.consumeRateLimit(`agent:${identity.userId}`, 20, 60 * 60 * 1000);
+  if (!allowedAgent) throw new AppError(ErrorCodes.RATE_LIMITED, "Too many agent requests", 429);
+  await db.research.updateInvocation({
+    ...invocation,
+    status: "queued",
+    errorCode: undefined,
+    errorMessage: undefined,
+    completedAt: undefined
+  });
+  scheduleAgent(
+    c,
+    executeAgentInvocation({
+      env: c.env,
+      db,
+      eventId: invocation.eventId,
+      invocationId: invocation.id
+    })
+  );
+  return c.json({ invocation: { ...invocation, status: "queued" } });
+});
+
+collaborationRoutes.post("/:eventId/agents/invocations", async (c) => {
+  const { identity, db } = await memberContext(c, "chat.write");
+  const eventId = c.req.param("eventId");
+  const body = await c.req.json<{ query?: string; visibility?: "event" | "private"; relatedRestaurantId?: string }>();
+  const query = body.query?.trim();
+  if (!query) throw new AppError(ErrorCodes.VALIDATION, "Query is required", 400);
+  const allowedAgent = await db.consumeRateLimit(`agent:${identity.userId}`, 20, 60 * 60 * 1000);
+  if (!allowedAgent) throw new AppError(ErrorCodes.RATE_LIMITED, "Too many agent requests", 429);
+  const visibility = body.visibility === "private" ? "private" : "event";
+  const source = newChatMessage({
+    eventId,
+    sender: { type: "user", userId: identity.userId },
+    messageType: "agent-request",
+    text: query,
+    relatedRestaurantId: body.relatedRestaurantId
+  });
+  if (visibility === "event") await db.collab.insertChat(source);
+  const started = await startAgentFromChat({
+    env: c.env,
+    db,
+    eventId,
+    userId: identity.userId,
+    source,
+    query,
+    agentId: "restaurant-research",
+    visibility
+  });
+  scheduleAgent(c, executeAgentInvocation({ env: c.env, db, eventId, invocationId: started.invocation.id }));
+  if (started.progress && visibility === "event") {
+    await notifyCouncil(c.env, eventId, { type: "chat", message: started.progress });
+  }
+  return c.json({ invocation: started.invocation }, 201);
 });
 
 collaborationRoutes.patch("/:eventId/chat/:messageId", async (c) => {

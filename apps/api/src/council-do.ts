@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { createPersonalAgentPrincipal, createNegotiatorPrincipal, type PersonalAgentPrincipal, type Principal } from "@rc/auth";
 import { deriveConstraints, verificationTasksFromCouncil } from "@rc/agents";
-import { runCouncil, reevaluateCouncil, mergeRestaurantMedia, isStaleCouncilLock, type CouncilDependencies } from "@rc/orchestration";
+import { runCouncil, reevaluateCouncil, mergeRestaurantMedia, isStaleCouncilLock, CouncilSpendTracker, type CouncilDependencies } from "@rc/orchestration";
 import {
   sanitizeCouncilSnapshotForClients,
   type CouncilClientEvent,
@@ -159,18 +159,23 @@ export class CouncilDurableObject extends DurableObject<Env> {
         db.collab.listDecisions(eventId),
         db.collab.listEvidence(eventId)
       ]);
+      const spend = new CouncilSpendTracker();
       const constraints = refreshConstraints
-        ? await this.refreshConstraints(db, current)
+        ? await this.refreshConstraints(db, current, spend)
         : current.constraints;
       const next = await reevaluateCouncil({
         snapshot: current,
         decisions,
         evidence,
         constraints,
-        runtime: runtimeFromEnv(this.env),
+        runtime: runtimeFromEnv(this.env, { onUsage: (usage) => spend.addAgent(usage) }),
+        spend,
         reportProgress: (progress, snapshot) => this.publishProgress(snapshot, progress)
       });
-      const restaurants = createRestaurantSearch(this.env, db);
+      const restaurants = createRestaurantSearch(this.env, db, {
+        onPlacesRequest: (request) => spend.addPlaces(request),
+        onPlacesCacheHit: (kind) => spend.addPlacesCache(kind)
+      });
       const negotiator = createNegotiatorPrincipal(eventId);
       for (const recommendation of next.recommendations.slice(0, 5)) {
         try {
@@ -184,6 +189,7 @@ export class CouncilDurableObject extends DurableObject<Env> {
         const richer = next.recommendations.find((item) => item.candidate.id === candidate.id)?.candidate;
         return richer ? mergeRestaurantMedia(richer, candidate) : candidate;
       });
+      if (next.progress) next.progress = { ...next.progress, spend: spend.snapshot() };
       const client = sanitizeCouncilSnapshotForClients(next);
       await this.ctx.storage.put("snapshot", client);
       await db.saveCouncilSnapshot(client);
@@ -214,8 +220,12 @@ export class CouncilDurableObject extends DurableObject<Env> {
     }
   }
 
-  private async refreshConstraints(db: Database, snapshot: CouncilSnapshot): Promise<CouncilConstraint[]> {
-    const runtime = runtimeFromEnv(this.env);
+  private async refreshConstraints(
+    db: Database,
+    snapshot: CouncilSnapshot,
+    spend?: CouncilSpendTracker
+  ): Promise<CouncilConstraint[]> {
+    const runtime = runtimeFromEnv(this.env, spend ? { onUsage: (usage) => spend.addAgent(usage) } : undefined);
     const vault = new D1PreferenceVault(db);
     const publicPreferences = (await db.listPreferences(snapshot.eventId)).filter(
       (preference) => preference.visibility === "PUBLIC"
@@ -264,7 +274,10 @@ export class CouncilDurableObject extends DurableObject<Env> {
         eventId: snapshot.eventId,
         sender: { type: "council" },
         messageType: "verification-update",
-        text: `⚠ ${String(task.requirementValue ?? task.requirementType)} at ${restaurant?.name ?? "a restaurant"} is currently uncertain. ${task.question}`,
+        text:
+          task.requirementType === "opening-hours"
+            ? `⚠ Hours at ${restaurant?.name ?? "a restaurant"} could not be verified. ${task.question}`
+            : `⚠ ${String(task.requirementValue ?? task.requirementType)} at ${restaurant?.name ?? "a restaurant"} is currently uncertain. ${task.question}`,
         relatedRestaurantId: task.restaurantId,
         relatedActionId: action.id
       });
@@ -275,7 +288,8 @@ export class CouncilDurableObject extends DurableObject<Env> {
   }
 
   private async execute(eventId: string): Promise<CouncilSnapshot> {
-    const runtime = runtimeFromEnv(this.env);
+    const spend = new CouncilSpendTracker();
+    const runtime = runtimeFromEnv(this.env, { onUsage: (usage) => spend.addAgent(usage) });
     if (!runtime) {
       throw new AppError(
         ErrorCodes.AGENTS_NOT_CONFIGURED,
@@ -315,7 +329,10 @@ export class CouncilDurableObject extends DurableObject<Env> {
 
     const db = new Database(this.env.DB);
     const vault = new D1PreferenceVault(db);
-    const restaurants = createRestaurantSearch(this.env, db);
+    const restaurants = createRestaurantSearch(this.env, db, {
+      onPlacesRequest: (request) => spend.addPlaces(request),
+      onPlacesCacheHit: (kind) => spend.addPlacesCache(kind)
+    });
     const dietary = createDietaryAnalyzer(this.env, db);
 
     const deps: CouncilDependencies = {
@@ -343,6 +360,8 @@ export class CouncilDurableObject extends DurableObject<Env> {
       restaurants,
       dietary,
       runtime,
+      spend,
+      previousSnapshot: (await this.ctx.storage.get<CouncilSnapshot>("snapshot")) ?? undefined,
       emit: async (event, snapshot) => {
         const client = sanitizeCouncilSnapshotForClients(snapshot);
         await this.ctx.storage.put("snapshot", client);

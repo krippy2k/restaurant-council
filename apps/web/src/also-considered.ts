@@ -67,6 +67,21 @@ export function whyNotRecommended(input: AlsoConsideredContext): string[] {
     }
   }
 
+  const hours = restaurant.hoursAssessment;
+  if (hours && (hours.status === "closes-too-soon" || hours.status === "closed") && reasons.length < 2) {
+    const close = hours.applicablePeriod?.closesAt;
+    reasons.push(
+      hours.status === "closed"
+        ? "It is not open at the event start time."
+        : close
+          ? `It closes too soon for the event start.`
+          : "It closes too soon for this event."
+    );
+  }
+  if (hours?.status === "unknown" && reasons.length < 2) {
+    reasons.push("Published hours could not be verified for the event time.");
+  }
+
   const unsupported = assessments.find((item) => item.status === "unsupported");
   if (unsupported && !reasons.length) {
     reasons.push(

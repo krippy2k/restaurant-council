@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
   HERO_PHOTO_MAX_WIDTH,
   restaurantPhotoUrl,
@@ -12,12 +12,13 @@ import {
   type RejectionReasonView
 } from "../rejection-reasons";
 import { DietaryCompatibility } from "./DietaryCompatibility";
+import { EvaluationBars } from "./EvaluationBars";
+import { HoursStatus } from "./HoursStatus";
 import { RestaurantContact } from "./RestaurantContact";
-import { RestaurantGallery } from "./RestaurantGallery";
+import { RestaurantExtraDetails } from "./RestaurantExtraDetails";
 import { RestaurantPhoto } from "./RestaurantPhoto";
 import { RestaurantPrice } from "./RestaurantPrice";
 import { RestaurantRating } from "./RestaurantRating";
-import { RestaurantReviewList } from "./RestaurantReviewList";
 
 export interface RecommendationView {
   candidate: RestaurantView;
@@ -52,10 +53,8 @@ export function RestaurantDetails({
   }>;
   children?: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
   const restaurant = recommendation.candidate;
   const photo = selectPrimaryPhoto(restaurant.photos);
-  const extraPhotos = (restaurant.photos ?? []).slice(1);
   const rejectionReasons = presentRejectionReasons(
     recommendation.rejectionReasons?.length
       ? recommendation.rejectionReasons
@@ -89,26 +88,17 @@ export function RestaurantDetails({
           <RestaurantRating rating={restaurant.rating} reviewCount={restaurant.reviewCount} />
           <RestaurantPrice priceLevel={restaurant.priceLevel} priceRange={restaurant.priceRange} />
         </p>
+        <HoursStatus
+          assessment={restaurant.hoursAssessment}
+          timeZone={restaurant.openingHours?.timeZone}
+        />
         <DietaryCompatibility restaurant={restaurant} />
         <p className="muted">
           {restaurant.cuisines.join(", ") || "Restaurant"}
           {restaurant.address ? ` · ${restaurant.address}` : ""}
         </p>
         <RestaurantContact restaurant={restaurant} />
-        <div className="bars">
-          {recommendation.evaluations.map((evaluation) => (
-            <div className="bar-row" key={evaluation.participantId}>
-              <span>{names.get(evaluation.participantId) ?? "Member"}</span>
-              <div className="track">
-                <div
-                  className={`fill ${evaluation.rejected ? "conflict" : ""}`}
-                  style={{ width: `${evaluation.score}%` }}
-                />
-              </div>
-              <span>{evaluation.label}</span>
-            </div>
-          ))}
-        </div>
+        <EvaluationBars evaluations={recommendation.evaluations} names={names} />
         {recommendation.rejected ? (
           <div>
             <p>{recommendation.rejectionSummary}</p>
@@ -152,25 +142,7 @@ export function RestaurantDetails({
           </div>
         )}
         {children}
-        <button className="btn secondary" type="button" onClick={() => setOpen((value) => !value)}>
-          {open ? "Hide details" : "View details"}
-        </button>
-        {open ? (
-          <div className="resto-detail-panel">
-            {extraPhotos.length ? (
-              <RestaurantGallery
-                restaurantId={restaurant.id}
-                restaurantName={restaurant.name}
-                photos={extraPhotos}
-              />
-            ) : null}
-            <RestaurantReviewList reviews={restaurant.reviews} />
-            {photo?.attribution ? <p className="muted">{photo.attribution}</p> : null}
-            {restaurant.providerAttribution ? (
-              <p className="muted">{restaurant.providerAttribution}</p>
-            ) : null}
-          </div>
-        ) : null}
+        <RestaurantExtraDetails restaurant={restaurant} />
       </div>
     </article>
   );

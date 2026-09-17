@@ -7,6 +7,10 @@ export interface AlsoConsideredRestaurant {
     requirement: string;
     status: string;
   }>;
+  hoursAssessment?: {
+    status: string;
+    applicablePeriod?: { opensAt: string; closesAt?: string };
+  };
 }
 
 export interface AlsoConsideredContext {
@@ -74,6 +78,18 @@ export function whyNotRecommended(input: AlsoConsideredContext): string[] {
     } else {
       reasons.push("It conflicts with a hard group constraint.");
     }
+  }
+
+  const hours = restaurant.hoursAssessment;
+  if (hours && (hours.status === "closes-too-soon" || hours.status === "closed") && reasons.length < 2) {
+    reasons.push(
+      hours.status === "closed"
+        ? "It is not open at the event start time."
+        : "It closes too soon for this event."
+    );
+  }
+  if (hours?.status === "unknown" && reasons.length < 2) {
+    reasons.push("Published hours could not be verified for the event time.");
   }
 
   const unsupported = assessments.find((item) => item.status === "unsupported");

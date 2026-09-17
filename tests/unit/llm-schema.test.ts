@@ -136,6 +136,40 @@ describe("LLM evaluation schema", () => {
     ]);
   });
 
+  it("falls back to deterministic scores when the evaluation model fails", async () => {
+    const principal = createPersonalAgentPrincipal({
+      userId: "usr_gee",
+      eventId: "evt_a"
+    });
+    const evaluations = await evaluateCandidates({
+      principal,
+      constraints: [],
+      candidates: [
+        {
+          id: "rst_ok",
+          name: "Cafe",
+          priceLevel: 2,
+          rating: 4.4,
+          cuisines: ["cafe"],
+          latitude: 40.76,
+          longitude: -73.98
+        }
+      ],
+      runtime: {
+        completeStructured: async () => {
+          throw new Error("LLM request timed out after 20000ms");
+        }
+      }
+    });
+    expect(evaluations).toEqual([
+      expect.objectContaining({
+        candidateId: "rst_ok",
+        rejected: false,
+        label: "Acceptable"
+      })
+    ]);
+  });
+
   it("drops invalid negotiator picks instead of failing", () => {
     const parsed = NegotiationLlmSchema.parse({
       picks: [{ name: "STK" }, { candidateId: "rst_ok", explanations: ["Outdoor seating"] }]

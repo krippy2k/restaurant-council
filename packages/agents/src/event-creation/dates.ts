@@ -103,7 +103,7 @@ export function extractTimeIntent(text: string): {
     if (hour > 23 || minute > 59) return undefined;
     return {
       time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
-      approximate: false
+      approximate: /\baround\b/.test(lower)
     };
   }
   const military = lower.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);

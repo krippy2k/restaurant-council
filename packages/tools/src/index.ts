@@ -10,6 +10,8 @@ export type {
   ResolvedLocation,
   Restaurant,
   RestaurantCache,
+  RestaurantOpeningHours,
+  RestaurantOpeningPeriod,
   RestaurantPhoto,
   RestaurantPhotoOptions,
   RestaurantPriceRange,
@@ -17,7 +19,9 @@ export type {
   RestaurantProviderType,
   RestaurantReview,
   RestaurantSearchRequest,
-  RestaurantSearchResult
+  RestaurantSearchResult,
+  WeeklyOpeningPeriod,
+  WeeklyOpeningPoint
 } from "./domain.ts";
 export {
   DEFAULT_RADIUS_METERS,
@@ -53,6 +57,7 @@ export {
   normalizeRating,
   normalizeReviewCount,
   selectPrimaryPhoto,
+  mergePhotos,
   reputationBonus,
   reputationScore,
   clampPhotoDimension,
@@ -63,7 +68,24 @@ export {
   formatMoneyAmount
 } from "./enrichment.ts";
 export type { PriceRangeAmounts } from "./enrichment.ts";
-export { GooglePlacesRestaurantProvider, DISCOVERY_FIELD_MASK, DETAILS_FIELD_MASK, photosFromGoogle, reviewsFromGoogle, assertSafePhotoUrl, priceRangeFromGoogle } from "./google-places.ts";
+export { GooglePlacesRestaurantProvider, DISCOVERY_FIELD_MASK, DETAILS_FIELD_MASK, HOURS_FIELD_MASK, photosFromGoogle, reviewsFromGoogle, assertSafePhotoUrl, priceRangeFromGoogle } from "./google-places.ts";
+export { estimatePlacesRequest, placesOperationFromUrl } from "./places-billing.ts";
+export type { PlacesBillableRequest, PlacesCacheKind, PlacesOperation, PlacesSkuTier } from "./places-billing.ts";
+export { evaluateRestaurantHours } from "./hours/evaluate.ts";
+export { googlePlaceToRestaurantHours, weeklyPeriodsFromGoogle, datedPeriodsFromGoogle } from "./hours/google.ts";
+export { materializeWeeklyPeriods, restaurantHoursFromWeekly } from "./hours/materialize.ts";
+export {
+  assessRestaurantHours,
+  hasStructuredHours,
+  hoursAreFresh,
+  hoursFromRestaurant,
+  openingHoursFromGooglePlace,
+  HOURS_CACHE_TTL_MS,
+  HOURS_CURRENT_CACHE_TTL_MS,
+  HOURS_REGULAR_CACHE_TTL_MS
+} from "./hours/from-restaurant.ts";
+export { parseFixtureHours } from "./hours/parse-fixture.ts";
+export { DEFAULT_MINIMUM_OPEN_AFTER_EVENT_MINUTES } from "@rc/protocol";
 export { MockDietaryAnalyzer } from "./dietary/mock-analyzer.ts";
 export { EvidenceDietaryAnalyzer } from "./dietary/analyzer.ts";
 export { CachingDietaryAnalyzer } from "./dietary/cache.ts";
@@ -73,7 +95,26 @@ export { extractDietarySignals } from "./dietary/extract.ts";
 export { structuredEvidenceForRequirement } from "./dietary/structured.ts";
 export { mockDietaryFixture } from "./dietary/mock-fixtures.ts";
 export { candidateAsRestaurant } from "./dietary/from-candidate.ts";
-export { fetchOfficialRestaurantText, fetchWebsiteText } from "./dietary/website.ts";
+export {
+  fetchOfficialRestaurantText,
+  fetchWebsiteText
+} from "./dietary/website.ts";
+export { fetchRestaurantPage, extractLinks, extractJsonLd, stripHtml } from "./research/fetch-page.ts";
+export {
+  extractMenuItemsFromText,
+  extractMenuItemsFromJsonLd,
+  queryMatchesItem,
+  menuItemsFromPage
+} from "./research/menu.ts";
+export { discoverReservationLinks, reservationDoesNotImplyAvailability } from "./research/reservation-links.ts";
+export {
+  createResearchTools,
+  createResearchToolRegistry,
+  createSearchMenuTool,
+  evidenceFromMenuItems
+} from "./research/tools.ts";
+export type { ResearchRestaurant, ResearchTool, ResearchToolDeps, ResearchCache, CachedEvidence } from "./research/tools.ts";
+export { createMockResearchTools, createMockSearchMenuTool, MOCK_SPORTS_GRILL_MENU, mockMenuFor } from "./research/mock.ts";
 export { dietaryCacheKey, emptyDietaryMetrics } from "./dietary/types.ts";
 export type {
   DietaryAnalyzer,

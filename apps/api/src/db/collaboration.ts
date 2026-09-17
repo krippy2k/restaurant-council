@@ -36,19 +36,25 @@ export class CollaborationStore {
     await this.db
       .prepare(
         `INSERT INTO event_chat_messages (
-          id, event_id, sender_type, sender_user_id, message_type, text,
-          related_restaurant_id, related_action_id, created_at, edited_at, deleted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          id, event_id, sender_type, sender_user_id, sender_agent_id, message_type, text,
+          related_restaurant_id, related_restaurant_ids_json, related_action_id, related_agent_invocation_id,
+          cards_json, offer_verification_json, created_at, edited_at, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         message.id,
         message.eventId,
         message.sender.type,
         message.sender.type === "user" ? message.sender.userId : null,
+        message.sender.type === "agent" ? message.sender.agentId : null,
         message.messageType,
         message.text ?? null,
-        message.relatedRestaurantId ?? null,
+        message.relatedRestaurantId ?? message.relatedRestaurantIds?.[0] ?? null,
+        message.relatedRestaurantIds ? json(message.relatedRestaurantIds) : null,
         message.relatedActionId ?? null,
+        message.relatedAgentInvocationId ?? null,
+        message.cards ? json(message.cards) : null,
+        message.offerVerification ? json(message.offerVerification) : null,
         message.createdAt,
         message.editedAt ?? null,
         message.deletedAt ?? null
@@ -59,9 +65,24 @@ export class CollaborationStore {
   async updateChat(message: EventChatMessage): Promise<void> {
     await this.db
       .prepare(
-        "UPDATE event_chat_messages SET text = ?, edited_at = ?, deleted_at = ? WHERE id = ? AND event_id = ?"
+        `UPDATE event_chat_messages SET
+          text = ?, edited_at = ?, deleted_at = ?, related_restaurant_id = ?, related_restaurant_ids_json = ?,
+          related_agent_invocation_id = ?, cards_json = ?, offer_verification_json = ?, message_type = ?
+         WHERE id = ? AND event_id = ?`
       )
-      .bind(message.text ?? null, message.editedAt ?? null, message.deletedAt ?? null, message.id, message.eventId)
+      .bind(
+        message.text ?? null,
+        message.editedAt ?? null,
+        message.deletedAt ?? null,
+        message.relatedRestaurantId ?? message.relatedRestaurantIds?.[0] ?? null,
+        message.relatedRestaurantIds ? json(message.relatedRestaurantIds) : null,
+        message.relatedAgentInvocationId ?? null,
+        message.cards ? json(message.cards) : null,
+        message.offerVerification ? json(message.offerVerification) : null,
+        message.messageType,
+        message.id,
+        message.eventId
+      )
       .run();
   }
 
@@ -283,17 +304,30 @@ export class CollaborationStore {
 
 function mapChat(row: Record<string, unknown>): EventChatMessage {
   const senderType = String(row.sender_type);
+  const relatedRestaurantIds = row.related_restaurant_ids_json
+    ? parseJson<string[]>(row.related_restaurant_ids_json, [])
+    : row.related_restaurant_id
+      ? [String(row.related_restaurant_id)]
+      : undefined;
   return {
     id: String(row.id),
     eventId: String(row.event_id),
     sender:
       senderType === "user"
         ? { type: "user", userId: String(row.sender_user_id) }
-        : { type: senderType as "council" | "system" },
+        : senderType === "agent"
+          ? { type: "agent", agentId: String(row.sender_agent_id ?? "restaurant-research") }
+          : { type: senderType as "council" | "system" },
     messageType: row.message_type as EventChatMessage["messageType"],
     text: row.text ? String(row.text) : undefined,
-    relatedRestaurantId: row.related_restaurant_id ? String(row.related_restaurant_id) : undefined,
+    relatedRestaurantId: row.related_restaurant_id ? String(row.related_restaurant_id) : relatedRestaurantIds?.[0],
+    relatedRestaurantIds,
     relatedActionId: row.related_action_id ? String(row.related_action_id) : undefined,
+    relatedAgentInvocationId: row.related_agent_invocation_id
+      ? String(row.related_agent_invocation_id)
+      : undefined,
+    cards: row.cards_json ? parseJson(row.cards_json, undefined) : undefined,
+    offerVerification: row.offer_verification_json ? parseJson(row.offer_verification_json, undefined) : undefined,
     createdAt: String(row.created_at),
     editedAt: row.edited_at ? String(row.edited_at) : undefined,
     deletedAt: row.deleted_at ? String(row.deleted_at) : undefined

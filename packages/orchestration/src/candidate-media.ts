@@ -1,4 +1,5 @@
 import type { RestaurantCandidate } from "@rc/protocol";
+import { mergePhotos } from "@rc/tools";
 
 /** Keep photos, reviews, and contact when a later candidate copy is thinner. */
 export function mergeRestaurantMedia(
@@ -8,20 +9,23 @@ export function mergeRestaurantMedia(
   if (!fallback) {
     return {
       ...primary,
-      photos: primary.photos?.length ? primary.photos : undefined,
+      photos: mergePhotos(primary.photos),
       reviews: primary.reviews?.length ? primary.reviews : undefined
     };
   }
   return {
     ...fallback,
     ...primary,
-    photos: primary.photos?.length ? primary.photos : fallback.photos,
+    photos: mergePhotos(primary.photos, fallback.photos),
     reviews: primary.reviews?.length ? primary.reviews : fallback.reviews,
     phone: primary.phone ?? fallback.phone,
     email: primary.email ?? fallback.email,
     website: primary.website ?? fallback.website,
     address: primary.address ?? fallback.address,
     hours: primary.hours ?? fallback.hours,
+    hoursWeekdayText: primary.hoursWeekdayText ?? fallback.hoursWeekdayText,
+    openingHours: primary.openingHours ?? fallback.openingHours,
+    hoursAssessment: primary.hoursAssessment ?? fallback.hoursAssessment,
     rating: primary.rating ?? fallback.rating,
     reviewCount: primary.reviewCount ?? fallback.reviewCount,
     priceRange: primary.priceRange ?? fallback.priceRange,

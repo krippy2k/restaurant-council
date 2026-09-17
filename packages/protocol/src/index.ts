@@ -6,6 +6,26 @@ import {
   parseDietaryConstraints,
   type DietaryConstraint
 } from "./dietary.ts";
+import {
+  CURRENT_HOURS_HORIZON_DAYS,
+  DEFAULT_MINIMUM_OPEN_AFTER_EVENT_MINUTES,
+  EventRestaurantSearchPolicySchema,
+  RestaurantHoursSchema,
+  RestaurantHoursAssessmentSchema,
+  RestaurantOpeningPeriodSchema,
+  CandidateOpeningHoursSchema,
+  defaultRestaurantSearchPolicy,
+  formatHoursClock,
+  formatHoursWeekday,
+  hoursRejectionExplanation,
+  hoursStatusCopy
+} from "./hours.ts";
+import {
+  CouncilAgentLogSchema,
+  parseLoggedPayload,
+  sanitizeAgentLogEntry,
+  sanitizeAgentLogValue
+} from "./agent-logs.ts";
 
 export {
   allergyToDietaryConstraint,
@@ -29,6 +49,28 @@ export type {
   DietaryRequirementId,
   KnownDietaryRequirement
 } from "./dietary.ts";
+
+export {
+  DEFAULT_MINIMUM_OPEN_AFTER_EVENT_MINUTES,
+  CURRENT_HOURS_HORIZON_DAYS,
+  EventRestaurantSearchPolicySchema,
+  RestaurantHoursSchema,
+  RestaurantHoursAssessmentSchema,
+  RestaurantOpeningPeriodSchema,
+  CandidateOpeningHoursSchema,
+  defaultRestaurantSearchPolicy,
+  formatHoursClock,
+  formatHoursWeekday,
+  hoursRejectionExplanation,
+  hoursStatusCopy
+};
+export type {
+  EventRestaurantSearchPolicy,
+  HoursAssessmentStatus,
+  RestaurantHours,
+  RestaurantHoursAssessment,
+  RestaurantOpeningPeriod
+} from "./hours.ts";
 
 export {
   EVENT_INTENT_PARSER_VERSION,
@@ -71,6 +113,36 @@ export {
   labelReason,
   decisionsForAgentContext
 } from "./collaboration.ts";
+export {
+  ResearchConfidenceSchema,
+  RestaurantEvidenceSchema,
+  MenuItemEvidenceSchema,
+  ResearchResultCardSchema,
+  AgentMentionSchema,
+  AgentInvocationSchema,
+  RestaurantResearchAnswerSchema,
+  ToolExecutionContextSchema,
+  rankEvidenceSource,
+  isSafeHttpUrl,
+  sanitizeResearchCards,
+  SOURCE_RANK
+} from "./research.ts";
+export type {
+  ResearchConfidence,
+  RestaurantEvidence,
+  RestaurantEvidenceSourceType,
+  MenuItemEvidence,
+  ResearchResultCard,
+  MenuItemCard,
+  ReservationLinkCard,
+  AgentMention,
+  AgentInvocation,
+  AgentInvocationStatus,
+  AgentInvocationVisibility,
+  RestaurantResearchAnswer,
+  ToolExecutionContext,
+  VerificationOffer
+} from "./research.ts";
 export type {
   CandidateStatus,
   CompleteVerificationInput,
@@ -158,6 +230,9 @@ export const RestaurantCandidateSchema = z.object({
   dietaryOptions: z.array(z.string()).optional(),
   address: z.string().optional(),
   hours: z.string().optional(),
+  hoursWeekdayText: z.array(z.string()).optional(),
+  openingHours: CandidateOpeningHoursSchema.optional(),
+  hoursAssessment: RestaurantHoursAssessmentSchema.optional(),
   website: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().optional(),
@@ -232,6 +307,45 @@ export const CouncilStatusSchema = z.enum([
   "FAILED"
 ]);
 
+export const CouncilRunSpendSchema = z.object({
+  currency: z.literal("USD"),
+  estimatedUsd: z.number(),
+  agents: z.object({
+    calls: z.number().int().min(0),
+    inputTokens: z.number().int().min(0),
+    outputTokens: z.number().int().min(0),
+    cachedInputTokens: z.number().int().min(0).optional(),
+    estimatedUsd: z.number(),
+    byModel: z
+      .array(
+        z.object({
+          model: z.string().min(1),
+          calls: z.number().int().min(0),
+          inputTokens: z.number().int().min(0),
+          outputTokens: z.number().int().min(0),
+          cachedInputTokens: z.number().int().min(0).optional(),
+          estimatedUsd: z.number()
+        })
+      )
+      .optional()
+  }),
+  places: z.object({
+    calls: z.number().int().min(0),
+    search: z.number().int().min(0),
+    details: z.number().int().min(0),
+    hours: z.number().int().min(0),
+    photos: z.number().int().min(0),
+    cachedCalls: z.number().int().min(0).optional(),
+    cachedSearch: z.number().int().min(0).optional(),
+    cachedDetails: z.number().int().min(0).optional(),
+    cachedHours: z.number().int().min(0).optional(),
+    cachedPhotos: z.number().int().min(0).optional(),
+    estimatedUsd: z.number()
+  })
+});
+
+export type CouncilRunSpend = z.infer<typeof CouncilRunSpendSchema>;
+
 export const CouncilProgressSchema = z.object({
   phase: CouncilStatusSchema,
   step: z.string(),
@@ -251,12 +365,21 @@ export const CouncilProgressSchema = z.object({
     })
     .optional(),
   detail: z.string().optional(),
+  spend: CouncilRunSpendSchema.optional(),
   startedAt: z.string(),
   sessionStartedAt: z.string(),
   completedAt: z.string().optional()
 });
 
 export type CouncilProgress = z.infer<typeof CouncilProgressSchema>;
+
+export {
+  CouncilAgentLogSchema,
+  parseLoggedPayload,
+  sanitizeAgentLogEntry,
+  sanitizeAgentLogValue
+};
+export type { CouncilAgentLog } from "./agent-logs.ts";
 
 export const CouncilClientEventTypeSchema = z.enum([
   "council.started",
@@ -302,6 +425,7 @@ export const CouncilSnapshotSchema = z.object({
   evaluations: z.array(CandidateEvaluationSchema),
   recommendations: z.array(RecommendationSchema),
   events: z.array(CouncilClientEventSchema),
+  agentLogs: z.array(CouncilAgentLogSchema).optional(),
   error: z.string().optional()
 });
 
@@ -346,6 +470,7 @@ export function sanitizeCouncilSnapshotForClients(
   return {
     ...snapshot,
     constraints,
+    agentLogs: snapshot.agentLogs?.map(sanitizeAgentLogEntry),
     recommendations: snapshot.recommendations.map((recommendation) => ({
       ...recommendation,
       rejectionReasons: recommendation.rejectionReasons?.filter((reason) =>

@@ -86,7 +86,9 @@ export function intentToCommand(
           ? source
           : "address",
       providerPlaceId: resolved.providerPlaceId
-    }
+    },
+    timezone,
+    restaurantSearchPolicy: intent.restaurantSearchPolicy
   });
 }
 

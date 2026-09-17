@@ -139,4 +139,52 @@ describe("client council snapshots", () => {
     expect(JSON.stringify(client)).not.toContain("MAX_PRICE_LEVEL");
     expect(snapshot.constraints).toHaveLength(2);
   });
+
+  it("redacts private notes and derived constraints in agent logs", () => {
+    const snapshot = {
+      sessionId: "csn_1",
+      eventId: "evt_a",
+      status: "COMPLETE",
+      participants: [],
+      negotiatorId: "agent_negotiator_evt_a",
+      constraints: [],
+      candidates: [],
+      evaluations: [],
+      recommendations: [],
+      events: [],
+      agentLogs: [
+        {
+          id: "alog_1",
+          at: "2026-09-17T15:00:00.000Z",
+          kind: "llm" as const,
+          status: "ok" as const,
+          name: "Derive constraints",
+          input: {
+            system: "Convert notes",
+            user: {
+              publicNotes: ["I like steak"],
+              privateNotes: ["I lost my job. Keep this under $30."]
+            }
+          },
+          output: {
+            publicConstraints: [{ type: "CUISINE_PREFER", value: ["steak"] }],
+            privateConstraints: [{ type: "MAX_PRICE_LEVEL", value: 2, visibility: "PRIVATE_DERIVED" }]
+          }
+        }
+      ]
+    } as CouncilSnapshot;
+
+    const client = sanitizeCouncilSnapshotForClients(snapshot);
+    const serialized = JSON.stringify(client.agentLogs);
+    expect(serialized).not.toContain("lost my job");
+    expect(serialized).not.toContain("under $30");
+    expect(serialized).not.toContain("MAX_PRICE_LEVEL");
+    expect(client.agentLogs?.[0]?.input).toEqual({
+      system: "Convert notes",
+      user: {
+        publicNotes: ["I like steak"],
+        privateNotes: { redacted: true, count: 1 }
+      }
+    });
+  });
 });

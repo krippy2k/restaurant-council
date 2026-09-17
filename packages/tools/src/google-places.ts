@@ -1,4 +1,4 @@
-import { AppError, ErrorCodes } from "@rc/shared";
+import { AppError, ErrorCodes, nowIso } from "@rc/shared";
 import type {
   Restaurant,
   RestaurantPhoto,
@@ -10,6 +10,8 @@ import type {
   RestaurantSearchResult
 } from "./domain.ts";
 import { DETAIL_REVIEW_LIMIT, FINALIST_PHOTO_LIMIT } from "./domain.ts";
+import { openingHoursFromGooglePlace } from "./hours/from-restaurant.ts";
+import type { GoogleHoursPlace } from "./hours/google.ts";
 import {
   attributionText,
   inferPriceLevelFromRange,
@@ -20,12 +22,16 @@ import {
 } from "./enrichment.ts";
 import { fetchWithTimeout, sanitizeProviderError } from "./http.ts";
 import { restaurantCouncilId } from "./identity.ts";
+import { estimatePlacesRequest, type PlacesBillableRequest } from "./places-billing.ts";
 
 export const DISCOVERY_FIELD_MASK =
   "places.id,places.displayName,places.formattedAddress,places.location,places.primaryType,places.types,places.priceLevel,places.priceRange,places.rating,places.userRatingCount,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.photos";
 
 export const DETAILS_FIELD_MASK =
-  "id,displayName,formattedAddress,location,primaryType,types,priceLevel,priceRange,rating,userRatingCount,websiteUri,nationalPhoneNumber,internationalPhoneNumber,regularOpeningHours,outdoorSeating,reservable,servesVegetarianFood,photos,reviews";
+  "id,displayName,formattedAddress,location,primaryType,types,priceLevel,priceRange,rating,userRatingCount,websiteUri,nationalPhoneNumber,internationalPhoneNumber,currentOpeningHours,regularOpeningHours,timeZone,outdoorSeating,reservable,servesVegetarianFood,photos,reviews";
+
+export const HOURS_FIELD_MASK =
+  "id,displayName,location,currentOpeningHours,regularOpeningHours,timeZone";
 
 const CUISINE_TYPES: Record<string, string> = {
   steak: "steak_house",
@@ -88,7 +94,9 @@ interface GooglePlace {
   websiteUri?: string;
   nationalPhoneNumber?: string;
   internationalPhoneNumber?: string;
-  regularOpeningHours?: { weekdayDescriptions?: string[]; openNow?: boolean };
+  regularOpeningHours?: GoogleHoursPlace["regularOpeningHours"];
+  currentOpeningHours?: GoogleHoursPlace["currentOpeningHours"];
+  timeZone?: { id?: string };
   outdoorSeating?: boolean;
   reservable?: boolean;
   servesVegetarianFood?: boolean;
@@ -212,12 +220,7 @@ function mapPlace(place: GooglePlace): Restaurant | null {
       outdoorSeating: place.outdoorSeating,
       reservable: place.reservable
     },
-    openingHours: place.regularOpeningHours
-      ? {
-          weekdayText: place.regularOpeningHours.weekdayDescriptions,
-          openNow: place.regularOpeningHours.openNow
-        }
-      : undefined
+    openingHours: openingHoursFromGooglePlace(place, nowIso()),
   };
 }
 
@@ -272,7 +275,8 @@ export class GooglePlacesRestaurantProvider implements RestaurantProvider {
 
   constructor(
     private readonly apiKey: string,
-    private readonly fetchImpl: typeof fetch = fetch
+    private readonly fetchImpl: typeof fetch = fetch,
+    private readonly options: { onBillableRequest?: (request: PlacesBillableRequest) => void } = {}
   ) {}
 
   async search(request: RestaurantSearchRequest): Promise<RestaurantSearchResult> {
@@ -297,11 +301,14 @@ export class GooglePlacesRestaurantProvider implements RestaurantProvider {
     };
   }
 
-  async getDetails(providerRestaurantId: string): Promise<Restaurant> {
+  async getDetails(
+    providerRestaurantId: string,
+    options?: { hoursOnly?: boolean }
+  ): Promise<Restaurant> {
     const payload = await this.requestJson(
       `https://places.googleapis.com/v1/places/${encodeURIComponent(providerRestaurantId)}`,
       { method: "GET" },
-      DETAILS_FIELD_MASK
+      options?.hoursOnly ? HOURS_FIELD_MASK : DETAILS_FIELD_MASK
     );
     const restaurant = mapPlace(payload as GooglePlace);
     if (!restaurant) {
@@ -409,8 +416,11 @@ export class GooglePlacesRestaurantProvider implements RestaurantProvider {
     const body = await response.text();
     if (!response.ok) throw translateProviderError(response.status, body);
     try {
-      return JSON.parse(body) as Record<string, unknown>;
-    } catch {
+      const payload = JSON.parse(body) as Record<string, unknown>;
+      this.options.onBillableRequest?.(estimatePlacesRequest(url, fieldMask));
+      return payload;
+    } catch (error) {
+      if (error instanceof AppError) throw error;
       throw new AppError(
         ErrorCodes.PROVIDER_UNAVAILABLE,
         "Restaurant provider returned an invalid response.",

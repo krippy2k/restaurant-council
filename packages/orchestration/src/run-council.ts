@@ -13,11 +13,11 @@ import type {
 import { AppError, ErrorCodes, createId, nowIso } from "@rc/shared";
 import {
   buildSearchRequest,
-  EVALUATION_CANDIDATE_LIMIT,
   searchAreaFromEvent
 } from "@rc/tools";
 import { attachDietaryAssessments, promisingForDeepDietary } from "./dietary.ts";
-import { mergeRestaurantMedia } from "./candidate-media.ts";
+import { retainCandidatesByHours } from "./hours.ts";
+import { mediaByRestaurantId, mergeRestaurantMedia } from "./candidate-media.ts";
 import type { CouncilDependencies } from "./types.ts";
 import {
   createProgressReporter,
@@ -27,6 +27,15 @@ import {
   negotiatorProgress,
   personalAgentProgress
 } from "./progress.ts";
+
+function keepKnownMedia(
+  candidates: RestaurantCandidate[],
+  previous?: CouncilSnapshot
+): RestaurantCandidate[] {
+  if (!previous) return candidates;
+  const media = mediaByRestaurantId(previous);
+  return candidates.map((candidate) => mergeRestaurantMedia(candidate, media.get(candidate.id)));
+}
 
 function event(
   type: CouncilClientEvent["type"],
@@ -188,11 +197,29 @@ export async function runCouncil(
       );
     }
 
-    candidates = candidates.slice(0, EVALUATION_CANDIDATE_LIMIT);
+    candidates = keepKnownMedia(candidates, deps.previousSnapshot);
+    await reporter.begin({
+      phase: "SEARCHING",
+      step: "Checking restaurant hours",
+      agent: negotiatorProgress()
+    });
+    const hoursResult = await retainCandidatesByHours({
+      candidates,
+      event: councilEvent,
+      restaurants,
+      principal: negotiator,
+      previous: deps.previousSnapshot?.candidates
+    });
+    for (const [metric, value] of Object.entries(hoursResult.metrics)) {
+      if (value) console.info(JSON.stringify({ metric, count: value }));
+    }
+    candidates = hoursResult.kept;
     if (candidates.length === 0) {
       throw new AppError(
         ErrorCodes.NOT_FOUND,
-        `No restaurants found near ${area.displayName}. Try a larger radius or different area.`,
+        hoursResult.eliminated.length
+          ? `Nearby restaurants are closed or closing too soon for ${councilEvent.date ? "this event time" : "the search"}. Try a different time or a larger area.`
+          : `No restaurants found near ${area.displayName}. Try a larger radius or different area.`,
         404
       );
     }
@@ -205,12 +232,15 @@ export async function runCouncil(
         agent: negotiatorProgress()
       });
       await push(event("dietary.analysis.started", "Checking published dietary information..."));
-      candidates = await attachDietaryAssessments({
-        candidates,
-        constraints,
-        analyzer: dietary,
-        depth: "basic"
-      });
+      candidates = keepKnownMedia(
+        await attachDietaryAssessments({
+          candidates,
+          constraints,
+          analyzer: dietary,
+          depth: "basic"
+        }),
+        deps.previousSnapshot
+      );
       snapshot.candidates = candidates;
     }
     for (const candidate of candidates) {
@@ -321,7 +351,7 @@ export async function runCouncil(
           depth: "basic"
         });
       }
-      candidates.push(...additions);
+      candidates.push(...keepKnownMedia(additions, deps.previousSnapshot));
       snapshot.candidates = candidates;
       for (const participant of participants) {
         const principal = createPersonalAgentPrincipal({
@@ -361,7 +391,10 @@ export async function runCouncil(
           depth: "deep"
         });
         const byId = new Map(deep.map((item) => [item.id, item]));
-        candidates = candidates.map((candidate) => byId.get(candidate.id) ?? candidate);
+        candidates = keepKnownMedia(
+          candidates.map((candidate) => byId.get(candidate.id) ?? candidate),
+          deps.previousSnapshot
+        );
         snapshot.candidates = candidates;
         evaluations.length = 0;
         for (const participant of participants) {
@@ -419,9 +452,20 @@ export async function runCouncil(
 
     snapshot.recommendations = recommendations;
     const enriched = new Map(recommendations.map((item) => [item.candidate.id, item.candidate]));
-    snapshot.candidates = candidates.map((candidate) =>
-      mergeRestaurantMedia(enriched.get(candidate.id) ?? candidate, candidate)
+    snapshot.candidates = keepKnownMedia(
+      candidates.map((candidate) =>
+        mergeRestaurantMedia(enriched.get(candidate.id) ?? candidate, candidate)
+      ),
+      deps.previousSnapshot
     );
+    snapshot.recommendations = recommendations.map((recommendation) => ({
+      ...recommendation,
+      candidate: mergeRestaurantMedia(
+        snapshot.candidates.find((item) => item.id === recommendation.candidate.id) ??
+          recommendation.candidate,
+        recommendation.candidate
+      )
+    }));
     for (const recommendation of recommendations) {
       await push(
         event(

@@ -45,8 +45,15 @@ export function summarizeIntent(intent: EventCreationIntent, timezone: string): 
     lines.push("Requirements");
     lines.push(...requirementLines);
   }
+  if (intent.restaurantSearchPolicy?.minimumOpenAfterEventMinutes) {
+    const minutes = intent.restaurantSearchPolicy.minimumOpenAfterEventMinutes;
+    const hours = minutes / 60;
+    const duration =
+      Number.isInteger(hours) ? `${hours} hour${hours === 1 ? "" : "s"}` : `${minutes} minutes`;
+    lines.push(`Stay open at least ${duration} after we arrive`);
+  }
   if (intent.invitees?.length) {
-    lines.push("Invite after creating");
+    lines.push("Invite");
     for (const invitee of intent.invitees) {
       lines.push([invitee.displayName, invitee.email].filter(Boolean).join(" · "));
     }

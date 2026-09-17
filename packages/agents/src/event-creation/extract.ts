@@ -76,19 +76,51 @@ export function extractPartySize(text: string): number | undefined {
   return undefined;
 }
 
+function normalizeEventText(text: string): string {
+  return text.toLowerCase().replaceAll("’", "'").replaceAll(".", "");
+}
+
+const PRICE_LANGUAGE =
+  /\$|\bdollars?\b|\bbucks\b|\bcheap\b|\binexpensive\b|\bbudget\b|\bprice\b|per\s*person|\/\s*person|\bpp\b|money is tight|nothing too expensive/;
+
+export function textHasPriceLanguage(text: string): boolean {
+  return PRICE_LANGUAGE.test(normalizeEventText(text));
+}
+
+function followedByClock(text: string, match: RegExpMatchArray): boolean {
+  const after = text.slice((match.index ?? 0) + match[0].length);
+  return /^(?::\d{2})?\s*(?:am|pm|oclock)\b/.test(after) || /^:\d{2}\b/.test(after);
+}
+
+function budgetAmount(
+  text: string,
+  pattern: RegExp
+): { amount: number; approximate: boolean } | undefined {
+  const match = text.match(pattern);
+  if (!match) return undefined;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || followedByClock(text, match)) return undefined;
+  return { amount, approximate: pattern.source.includes("around") };
+}
+
 export function extractPrice(text: string): EventCreationIntent["price"] | undefined {
-  const lower = text.toLowerCase().replaceAll("’", "'");
-  const under = lower.match(/under\s*\$?\s*(\d+)/);
-  const around = lower.match(/around\s*\$?\s*(\d+)/);
-  const amount = under ? Number(under[1]) : around ? Number(around[1]) : undefined;
+  const lower = normalizeEventText(text);
   const preferred =
     /would rather|rather keep|prefer|i'd like to stay|don't tell|dont tell|money is tight/.test(lower);
+  const around =
+    budgetAmount(lower, /around\s*\$\s*(\d+)/) ??
+    budgetAmount(lower, /around\s+(\d+)\s*(?:dollars?|bucks|per\s*person|\/\s*person|\bpp\b)/);
+  const under =
+    budgetAmount(lower, /under\s*\$\s*(\d+)/) ??
+    budgetAmount(lower, /(?:under|below)\s+(\d+)(?=\s*(?:dollars?|bucks|per\s*person|\/\s*person|\bpp\b)\b)/) ??
+    budgetAmount(lower, /(?:keep it |stay )?(?:under|below)\s+(\d+)/);
+  const amount = under?.amount ?? around?.amount;
   if (amount) {
     const level = amount <= 15 ? 1 : amount <= 30 ? 2 : amount <= 60 ? 3 : 4;
     return {
       maxPerPerson: amount,
       providerPriceLevels: [1, level].filter((item, index, all) => all.indexOf(item) === index && item <= level),
-      strength: preferred || around ? "preferred" : "required"
+      strength: preferred || Boolean(around) ? "preferred" : "required"
     };
   }
   if (/\bcheap\b|\binexpensive\b|nothing too expensive/.test(lower)) {
@@ -162,6 +194,29 @@ export function extractDietary(text: string): EventCreationIntent["dietaryRequir
   return parsed.length ? parsed : undefined;
 }
 
+export function extractMinimumOpenAfterMinutes(text: string): number | undefined {
+  const lower = text.toLowerCase().replaceAll("’", "'");
+  if (/hour and a half|an hour and a half|90 minutes/.test(lower) && /after/.test(lower)) {
+    return 90;
+  }
+  const hours = lower.match(
+    /(?:stay\s+open|remain\s+open|open)(?:\s+for)?(?:\s+at\s+least)?\s+(\d+|one|two|three|four|an|a)\s+hours?\s+after/
+  );
+  if (hours) {
+    const raw = hours[1];
+    const count = raw === "an" || raw === "a" ? 1 : parseCount(raw);
+    if (count != null) return Math.min(360, Math.max(15, count * 60));
+  }
+  const minutes = lower.match(
+    /(?:stay\s+open|remain\s+open|open)(?:\s+for)?(?:\s+at\s+least)?\s+(\d+)\s+minutes?\s+after/
+  );
+  if (minutes) {
+    const count = Number(minutes[1]);
+    if (Number.isFinite(count)) return Math.min(360, Math.max(15, count));
+  }
+  return undefined;
+}
+
 export function extractRequirements(text: string): EventCreationIntent["requirements"] {
   const lower = text.toLowerCase();
   const requirements = [];
@@ -171,13 +226,21 @@ export function extractRequirements(text: string): EventCreationIntent["requirem
   return requirements.length ? requirements : undefined;
 }
 
+const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+
 export function extractInvitees(text: string): EventCreationIntent["invitees"] {
-  const invitees = [];
-  const email = [...text.matchAll(/invite\s+([A-Za-z]+)\s+at\s+(\S+@\S+\.\S+)/gi)];
-  for (const match of email) {
-    invitees.push({ displayName: match[1], email: match[2]?.replace(/[.,]$/, "").toLowerCase() });
+  const invitees = new Map<string, { displayName?: string; email: string }>();
+  for (const match of text.matchAll(
+    /(?:invite\s+)?([A-Za-z][A-Za-z'-]{1,40})\s+(?:at|to)\s+([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/gi
+  )) {
+    const email = match[2].replace(/[.,]+$/g, "").toLowerCase();
+    invitees.set(email, { displayName: match[1].trim(), email });
   }
-  return invitees.length ? invitees : undefined;
+  for (const match of text.matchAll(EMAIL)) {
+    const email = match[0].replace(/[.,]+$/g, "").toLowerCase();
+    if (!invitees.has(email)) invitees.set(email, { email });
+  }
+  return invitees.size ? [...invitees.values()] : undefined;
 }
 
 export function defaultTitle(intent: Pick<EventCreationIntent, "date" | "requirements" | "cuisines">): string {
@@ -222,6 +285,10 @@ export function intentFromText(text: string, context: EventParserContext): Event
     price: extractPrice(text),
     requirements: extractRequirements(text),
     invitees: extractInvitees(text),
+    restaurantSearchPolicy: (() => {
+      const minimumOpenAfterEventMinutes = extractMinimumOpenAfterMinutes(text);
+      return minimumOpenAfterEventMinutes != null ? { minimumOpenAfterEventMinutes } : undefined;
+    })(),
     missingFields: [],
     ambiguities: [],
     source: "natural-language"

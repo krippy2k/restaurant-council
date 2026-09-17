@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { FormError } from "../FormError";
-import { api, type EventSummary, type User } from "../api";
+import { api, type EventSummary, type PendingInvitation, type User } from "../api";
+import { rememberDevAccount } from "../dev-accounts";
 
 export function HomePage({
   user,
@@ -13,11 +14,14 @@ export function HomePage({
   const [email, setEmail] = useState("gee@example.com");
   const [displayName, setDisplayName] = useState("Gee");
   const [events, setEvents] = useState<EventSummary[]>([]);
+  const [invites, setInvites] = useState<PendingInvitation[]>([]);
   const [error, setError] = useState<unknown>();
 
   useEffect(() => {
     if (!user) return;
+    if (user.email) rememberDevAccount({ email: user.email, displayName: user.displayName });
     api.events().then((data) => setEvents(data.events)).catch(setError);
+    api.pendingInvitations().then((data) => setInvites(data.invitations)).catch(() => undefined);
   }, [user]);
 
   async function signIn(event: FormEvent) {
@@ -25,7 +29,21 @@ export function HomePage({
     setError(undefined);
     try {
       const data = await api.signin(email, displayName);
+      if (!data.user) throw new Error("Sign-in failed");
+      rememberDevAccount({ email: data.user.email ?? email, displayName: data.user.displayName });
       onAuth(data.user);
+    } catch (err) {
+      setError(err);
+    }
+  }
+
+  async function acceptInvite(invitation: PendingInvitation) {
+    setError(undefined);
+    try {
+      await api.acceptPendingInvitation(invitation.id);
+      setInvites((current) => current.filter((item) => item.id !== invitation.id));
+      const data = await api.events();
+      setEvents(data.events);
     } catch (err) {
       setError(err);
     }
@@ -66,7 +84,7 @@ export function HomePage({
           <p>Local development sign-in. No password. Production can swap the identity provider.</p>
           <label className="field">
             <span>Display name</span>
-            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required />
           </label>
           <label className="field">
             <span>Email</span>
@@ -93,8 +111,28 @@ export function HomePage({
         </Link>
       </div>
       <FormError error={error} />
+      {invites.length ? (
+        <section className="stack invite-inbox">
+          <h2>Invitations</h2>
+          {invites.map((invitation) => (
+            <article className="event-card" key={invitation.id}>
+              <div>
+                <p className="kicker">{invitation.inviterName} invited you</p>
+                <h2>{invitation.eventName}</h2>
+                <p className="muted">
+                  {invitation.date ? new Date(invitation.date).toLocaleString() : "Date TBD"}
+                  {invitation.locationLabel ? ` · ${invitation.locationLabel}` : ""}
+                </p>
+              </div>
+              <button className="btn" type="button" onClick={() => void acceptInvite(invitation)}>
+                Accept
+              </button>
+            </article>
+          ))}
+        </section>
+      ) : null}
       <div className="card-list">
-        {events.length === 0 ? (
+        {events.length === 0 && invites.length === 0 ? (
           <p className="muted">No events yet. Create one and invite the rest of the table.</p>
         ) : (
           events.map((event) => (

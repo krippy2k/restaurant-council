@@ -4,6 +4,8 @@ export { negotiate, isSafeExplanation } from "./negotiator.ts";
 export { publicRejectionReasons } from "./rejection-reasons.ts";
 export type { AgentRuntime, LlmRuntimeConfig } from "./runtime.ts";
 export { createAgentRuntime, LlmAgentRuntime } from "./runtime.ts";
+export { estimateAgentUsd, modelRates } from "./llm-pricing.ts";
+export type { AgentTokenUsage } from "./llm-pricing.ts";
 export { EventCreationAgent, formValuesFromIntent, DEFAULT_EVENT_RADIUS_MILES } from "./event-creation/agent.ts";
 export type { EventCreationResult, LocationLookupResult, ResolvedPlace } from "./event-creation/agent.ts";
 export { MockEventIntentParser, mergeIntent, applyDraft } from "./event-creation/parser.ts";
@@ -18,3 +20,11 @@ export { verificationTasksFromCouncil, claimVerificationTask, releaseVerificatio
 export { detectPreferenceFromChat, newPreferencePrompt } from "./preference-from-chat.ts";
 export { interpretPreferenceNotes } from "./preference-from-notes.ts";
 export type { PreferenceNoteDraft } from "./preference-from-notes.ts";
+export {
+  ChatAgentRegistry,
+  RestaurantResearchAgent,
+  createChatAgentRegistry
+} from "./chat/registry.ts";
+export type { AgentContext, AgentRequest, AgentResponse, ChatAgent, ResearchToolHost } from "./chat/registry.ts";
+export { parseAgentMentions, firstRegisteredMention } from "./chat/mentions.ts";
+export { resolveRestaurants, carryForwardQuery, extractExplicitNames, normalizeRestaurantName } from "./chat/resolve-restaurant.ts";
