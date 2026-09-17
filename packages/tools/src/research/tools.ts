@@ -29,6 +29,9 @@ export interface ResearchRestaurant {
   }>;
   latitude?: number;
   longitude?: number;
+  hours?: string;
+  hoursWeekdayText?: string[];
+  openingHours?: { weekdayText?: string[]; timeZone?: string };
 }
 
 export interface ResearchTool<TInput, TOutput> {

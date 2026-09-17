@@ -28,6 +28,9 @@ function toResearchRestaurant(candidate: {
   dietaryAssessments?: ResearchRestaurant["dietaryAssessments"];
   latitude: number;
   longitude: number;
+  hours?: string;
+  hoursWeekdayText?: string[];
+  openingHours?: ResearchRestaurant["openingHours"];
 }): ResearchRestaurant {
   return {
     id: candidate.id,
@@ -42,7 +45,10 @@ function toResearchRestaurant(candidate: {
     reviews: candidate.reviews,
     dietaryAssessments: candidate.dietaryAssessments,
     latitude: candidate.latitude,
-    longitude: candidate.longitude
+    longitude: candidate.longitude,
+    hours: candidate.hours,
+    hoursWeekdayText: candidate.hoursWeekdayText,
+    openingHours: candidate.openingHours
   };
 }
 
@@ -137,6 +143,7 @@ export async function executeAgentInvocation(input: {
       errorCode: undefined,
       errorMessage: undefined
     };
+    console.info(JSON.stringify({ metric: "agent_invocations_completed", status: "completed" }));
 
     if (invocation.visibility === "event") {
       const response = await upsertAgentResponse(input.db, completed, result.answer.answer, {
@@ -159,6 +166,8 @@ export async function executeAgentInvocation(input: {
       errorCode: "AGENT_FAILED",
       errorMessage: error instanceof Error ? error.message.slice(0, 240) : "Agent failed"
     };
+    console.error("agent invocation failed", error);
+    console.info(JSON.stringify({ metric: "agent_invocations_completed", status: "failed" }));
     if (invocation.visibility === "event") {
       const response = await upsertAgentResponse(input.db, failed, "I couldn't finish that research. You can retry the request.", {
         restaurantIds: []

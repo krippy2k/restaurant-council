@@ -326,6 +326,34 @@ describe("restaurant research agent", () => {
     expect(result.answer.answer).not.toMatch(/which restaurant/i);
   });
 
+  it("answers how late a restaurant is open from published hours, not the menu", async () => {
+    const talkin: RestaurantCandidate = {
+      ...flanigans,
+      id: "res_talkin",
+      name: "Talkin' Tacos Miramar",
+      openingHours: {
+        timeZone: "America/New_York",
+        weekdayText: [
+          "Monday: 11:00 AM – 10:00 PM",
+          "Tuesday: 11:00 AM – 10:00 PM",
+          "Wednesday: 11:00 AM – 10:00 PM",
+          "Thursday: 11:00 AM – 10:00 PM",
+          "Friday: 11:00 AM – 11:00 PM",
+          "Saturday: 11:00 AM – 11:00 PM",
+          "Sunday: 11:00 AM – 9:00 PM"
+        ]
+      }
+    };
+    const result = await agent().execute(
+      request("how late is Talkin Tacos open today"),
+      context({ candidateRestaurants: [sports, flanigans, talkin] })
+    );
+    expect(result.answer.restaurantIds).toEqual(["res_talkin"]);
+    expect(result.answer.answer).toMatch(/11:00 AM|open|hours/i);
+    expect(result.answer.answer).not.toMatch(/couldn't confirm that on the current menu/i);
+    expect(result.answer.cards?.some((card) => card.type === "fact" && card.label === "Hours today")).toBe(true);
+  });
+
   it("asks for clarification when the location is ambiguous", async () => {
     const result = await agent().execute(
       request("does Sports Grill have fried shrimp?"),

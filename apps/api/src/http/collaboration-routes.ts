@@ -28,7 +28,7 @@ import { newAction, newChatMessage } from "../db/collaboration.ts";
 import { loadEventResource } from "./event-access.ts";
 import { requireUser, type AppContext, type AppVariables } from "./session.ts";
 import { collabMetric, notifyCouncil, requestReevaluate } from "./collab-notify.ts";
-import { createEventResearchRegistry, executeAgentInvocation, scheduleAgent, startAgentFromChat } from "../services/agent-chat.ts";
+import { createEventResearchRegistry, executeAgentInvocation, startAgentFromChat } from "../services/agent-chat.ts";
 
 export const collaborationRoutes = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -119,7 +119,7 @@ collaborationRoutes.post("/:eventId/chat", async (c) => {
     invocation = started.invocation;
     progress = started.progress;
     collabMetric("agent_invocations_created");
-    scheduleAgent(c, executeAgentInvocation({ env: c.env, db, eventId, invocationId: invocation.id }));
+    await executeAgentInvocation({ env: c.env, db, eventId, invocationId: invocation.id });
   }
   const detected = detectedMention
     ? undefined
@@ -184,15 +184,12 @@ collaborationRoutes.post("/:eventId/agents/invocations/:invocationId/retry", asy
     errorMessage: undefined,
     completedAt: undefined
   });
-  scheduleAgent(
-    c,
-    executeAgentInvocation({
-      env: c.env,
-      db,
-      eventId: invocation.eventId,
-      invocationId: invocation.id
-    })
-  );
+  await executeAgentInvocation({
+    env: c.env,
+    db,
+    eventId: invocation.eventId,
+    invocationId: invocation.id
+  });
   return c.json({ invocation: { ...invocation, status: "queued" } });
 });
 
@@ -223,7 +220,7 @@ collaborationRoutes.post("/:eventId/agents/invocations", async (c) => {
     agentId: "restaurant-research",
     visibility
   });
-  scheduleAgent(c, executeAgentInvocation({ env: c.env, db, eventId, invocationId: started.invocation.id }));
+  await executeAgentInvocation({ env: c.env, db, eventId, invocationId: started.invocation.id });
   if (started.progress && visibility === "event") {
     await notifyCouncil(c.env, eventId, { type: "chat", message: started.progress });
   }
